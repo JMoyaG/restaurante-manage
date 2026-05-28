@@ -1462,7 +1462,7 @@ const cerrarCaja = () => {
         fontWeight: 900,
       }}
     >
-      🌮 Restaurante Premium
+      🌮 Restaurante 
     </h1>
 
     <p
