@@ -1930,7 +1930,7 @@ const cerrarCaja = () => {
         fontWeight: 900,
       }}
     >
-      👨‍🍳 Cocina Premium
+      👨‍🍳 Cocina 
     </h1>
 
     <p
