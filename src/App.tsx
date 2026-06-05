@@ -1381,7 +1381,7 @@ const cerrarCaja = () => {
     efectivoSistema: totalEfectivo,
     efectivoReportado,
     efectivoReportadoSinApertura,
-    diferenciaEfectivo: efectivoReportadoSinApertura - totalEfectivo,
+    diferenciaEfectivo: efectivoReportado - totalEfectivo,
     totalEfectivo,
     totalTarjeta,
     totalSinpe,
