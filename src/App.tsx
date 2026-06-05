@@ -12,11 +12,11 @@ type Usuario = {
 type EstadoMesa = "Libre" | "Ocupada" | "Cuenta solicitada";
 type EstadoCocina = "Pendiente" | "Preparando" | "Listo";
 type MetodoPago = "Efectivo" | "Tarjeta" | "SINPE" | "Mixto";
-
+type CategoriaProducto = "Comida" | "Entrada" | "Postre" | "Refresco" | "Combo";
 
 type Producto = {
   id: number;
-  categoria: string;
+  categoria: CategoriaProducto;
   nombre: string;
   precio: number;
 };
@@ -26,6 +26,8 @@ type ItemOrden = Producto & {
   nota?: string;
   estadoCocina: EstadoCocina;
   enviadoCocina: boolean;
+  pagado?: boolean;
+  montoExtra?: number;
 };
 
 type Mesa = {
@@ -33,6 +35,7 @@ type Mesa = {
   nombre: string;
   estado: EstadoMesa;
   orden: ItemOrden[];
+  cuentaDividida?: boolean;
 };
 
 type Venta = {
@@ -44,10 +47,27 @@ type Venta = {
   montoRecibido: number;
   vuelto: number;
   items: ItemOrden[];
+  esCuentaDividida?: boolean;
 };
+
+type CajaActual = {
+  abierta: boolean;
+  montoApertura: number;
+  fechaApertura: string;
+  usuario: string;
+};
+
 type CierreCaja = {
   id: number;
   fecha: string;
+  fechaApertura?: string;
+  usuarioApertura?: string;
+  usuarioCierre?: string;
+  montoApertura: number;
+  efectivoSistema: number;
+  efectivoReportado: number;
+  efectivoReportadoSinApertura: number;
+  diferenciaEfectivo: number;
   totalEfectivo: number;
   totalTarjeta: number;
   totalSinpe: number;
@@ -56,13 +76,29 @@ type CierreCaja = {
   cantidadVentas: number;
   ventas: Venta[];
 };
+const categoriasProducto: CategoriaProducto[] = ["Comida", "Entrada", "Postre", "Refresco", "Combo"];
+
+const normalizarCategoria = (categoria: string): CategoriaProducto => {
+  const limpia = categoria.toLowerCase().trim();
+
+  if (limpia.includes("entrada")) return "Entrada";
+  if (limpia.includes("postre")) return "Postre";
+  if (limpia.includes("bebida") || limpia.includes("refresco")) return "Refresco";
+  if (limpia.includes("combo")) return "Combo";
+
+  return "Comida";
+};
+
+const totalItemOrden = (item: ItemOrden) =>
+  item.precio * item.cantidad + (item.montoExtra || 0);
+
 const productosIniciales: Producto[] = [
-  { id: 1, categoria: "Comidas", nombre: "Hamburguesa", precio: 3500 },
-  { id: 2, categoria: "Comidas", nombre: "Pizza", precio: 6000 },
-  { id: 3, categoria: "Comidas", nombre: "Papas", precio: 2500 },
-  { id: 4, categoria: "Bebidas", nombre: "Coca Cola", precio: 1500 },
-  { id: 5, categoria: "Bebidas", nombre: "Natural", precio: 1800 },
-  { id: 6, categoria: "Postres", nombre: "Tres Leches", precio: 2800 },
+  { id: 1, categoria: "Comida", nombre: "Hamburguesa", precio: 3500 },
+  { id: 2, categoria: "Comida", nombre: "Pizza", precio: 6000 },
+  { id: 3, categoria: "Entrada", nombre: "Papas", precio: 2500 },
+  { id: 4, categoria: "Refresco", nombre: "Coca Cola", precio: 1500 },
+  { id: 5, categoria: "Refresco", nombre: "Natural", precio: 1800 },
+  { id: 6, categoria: "Postre", nombre: "Tres Leches", precio: 2800 },
 ];
 const usuariosIniciales: Usuario[] = [
   {
@@ -96,6 +132,7 @@ const crearMesas = (): Mesa[] =>
     nombre: `Mesa ${i + 1}`,
     estado: "Libre",
     orden: [],
+    cuentaDividida: false,
   }));
 
 const formatoCRC = (monto: number) =>
@@ -122,7 +159,12 @@ export default function App() {
 
 const [productos, setProductos] = useState<Producto[]>(() => {
   const guardados = localStorage.getItem("pos_productos");
-  return guardados ? JSON.parse(guardados) : productosIniciales;
+  const lista = guardados ? JSON.parse(guardados) : productosIniciales;
+
+  return lista.map((p: Producto) => ({
+    ...p,
+    categoria: normalizarCategoria(String(p.categoria || "Comida")),
+  }));
 });
 const [usuarios, setUsuarios] = useState<Usuario[]>(() => {
   const guardados = localStorage.getItem("pos_usuarios");
@@ -142,7 +184,7 @@ const [nuevoUsuario, setNuevoUsuario] = useState<Usuario>({
 const [nuevoProducto, setNuevoProducto] = useState<Producto>({
   id: 0,
   nombre: "",
-  categoria: "Comidas",
+  categoria: "Comida",
   precio: 0,
 });
 const [productoEditando, setProductoEditando] = useState<number | null>(null);
@@ -178,9 +220,29 @@ const mesaQR = parametrosUrl.get("mesa");
 const modoMenuQR = parametrosUrl.get("menu") === "1";
 const [ordenQR, setOrdenQR] = useState<ItemOrden[]>([]);
 const [notaQR, setNotaQR] = useState("");
+const [itemsPagoSeleccionados, setItemsPagoSeleccionados] = useState<number[]>([]);
+const [cajaActual, setCajaActual] = useState<CajaActual | null>(() => {
+  const guardada = localStorage.getItem("pos_caja_actual");
+  return guardada ? JSON.parse(guardada) : null;
+});
+
 useEffect(() => {
   localStorage.setItem("pos_cierres_caja", JSON.stringify(cierresCaja));
 }, [cierresCaja]);
+
+useEffect(() => {
+  if (cajaActual) {
+    localStorage.setItem("pos_caja_actual", JSON.stringify(cajaActual));
+  } else {
+    localStorage.removeItem("pos_caja_actual");
+  }
+}, [cajaActual]);
+
+useEffect(() => {
+  setItemsPagoSeleccionados([]);
+  setMontoRecibido(0);
+}, [mesaId]);
+
   useEffect(() => {
     localStorage.setItem("pos_mesas", JSON.stringify(mesas));
   }, [mesas]);
@@ -208,13 +270,36 @@ useEffect(() => {
     [mesas, mesaId]
   );
 
+  const ordenBloqueada = Boolean(
+    mesaSeleccionada?.orden.some((item) => item.enviadoCocina)
+  );
+  const puedeEditarOrdenActual =
+    rol === "Admin" || (rol === "Mesero" && !ordenBloqueada);
+
   const total = mesaSeleccionada
-    ? mesaSeleccionada.orden.reduce(
-        (acc, item) => acc + item.precio * item.cantidad,
-        0
-      )
+    ? mesaSeleccionada.orden.reduce((acc, item) => acc + totalItemOrden(item), 0)
     : 0;
 
+  const totalPendiente = mesaSeleccionada
+    ? mesaSeleccionada.orden
+        .filter((item) => !item.pagado)
+        .reduce((acc, item) => acc + totalItemOrden(item), 0)
+    : 0;
+
+  const itemsCobroActual = mesaSeleccionada
+    ? mesaSeleccionada.orden.filter((item) => {
+        if (item.pagado) return false;
+        if (!mesaSeleccionada.cuentaDividida) return true;
+        return itemsPagoSeleccionados.includes(item.id);
+      })
+    : [];
+
+  const totalCobroActual = itemsCobroActual.reduce(
+    (acc, item) => acc + totalItemOrden(item),
+    0
+  );
+
+  const cajaAbierta = Boolean(cajaActual?.abierta);
   const puedeCobrar = rol === "Admin" || rol === "Caja";
   const puedeVerStats = rol === "Admin";
   const puedeCerrarCaja = rol === "Admin" || rol === "Caja";
@@ -257,6 +342,10 @@ const puedeExportarPDF = rol === "Admin";
 
   const agregarProducto = (producto: Producto) => {
     if (!mesaSeleccionada) return;
+    if (!puedeEditarOrdenActual) {
+      alert("Esta orden ya fue enviada a cocina. Solo el administrador puede modificarla.");
+      return;
+    }
 
     const existe = mesaSeleccionada.orden.find((p) => p.id === producto.id);
 
@@ -272,6 +361,8 @@ const puedeExportarPDF = rol === "Admin";
             nota: "",
             estadoCocina: "Pendiente" as EstadoCocina,
             enviadoCocina: false,
+            pagado: false,
+            montoExtra: 0,
           },
         ];
 
@@ -284,6 +375,10 @@ const puedeExportarPDF = rol === "Admin";
 
   const cambiarCantidad = (productoId: number, cambio: number) => {
     if (!mesaSeleccionada) return;
+    if (!puedeEditarOrdenActual) {
+      alert("Esta orden ya fue enviada a cocina. Solo el administrador puede modificarla.");
+      return;
+    }
 
     const ordenNueva = mesaSeleccionada.orden
       .map((item) =>
@@ -302,6 +397,10 @@ const puedeExportarPDF = rol === "Admin";
 
   const eliminarProducto = (productoId: number) => {
     if (!mesaSeleccionada) return;
+    if (!puedeEditarOrdenActual) {
+      alert("Esta orden ya fue enviada a cocina. Solo el administrador puede modificarla.");
+      return;
+    }
 
     const ordenNueva = mesaSeleccionada.orden.filter(
       (item) => item.id !== productoId
@@ -316,6 +415,10 @@ const puedeExportarPDF = rol === "Admin";
 
   const cambiarNota = (productoId: number, nota: string) => {
     if (!mesaSeleccionada) return;
+    if (!puedeEditarOrdenActual) {
+      alert("Esta orden ya fue enviada a cocina. Solo el administrador puede modificarla.");
+      return;
+    }
 
     actualizarMesa({
       ...mesaSeleccionada,
@@ -327,6 +430,10 @@ const puedeExportarPDF = rol === "Admin";
 
   const enviarACocina = () => {
     if (!mesaSeleccionada || mesaSeleccionada.orden.length === 0) return;
+    if (!puedeEditarOrdenActual) {
+      alert("Esta orden ya fue enviada a cocina. Solo el administrador puede reenviarla o modificarla.");
+      return;
+    }
 
     actualizarMesa({
       ...mesaSeleccionada,
@@ -374,19 +481,105 @@ const puedeExportarPDF = rol === "Admin";
     window.print();
   };
 
+  const abrirCaja = () => {
+    const monto = prompt("¿Con cuánto desea abrir la caja?");
+    if (monto === null) return;
+
+    const montoApertura = Number(monto);
+    if (Number.isNaN(montoApertura) || montoApertura < 0) {
+      alert("Monto inválido.");
+      return;
+    }
+
+    setCajaActual({
+      abierta: true,
+      montoApertura,
+      fechaApertura: new Date().toLocaleString("es-CR"),
+      usuario: usuarioActual?.nombre || usuarioActual?.usuario || "Caja",
+    });
+
+    alert("Caja abierta correctamente.");
+  };
+
+  const toggleCuentaDividida = () => {
+    if (!mesaSeleccionada) return;
+
+    const activa = !mesaSeleccionada.cuentaDividida;
+    actualizarMesa({ ...mesaSeleccionada, cuentaDividida: activa });
+    setItemsPagoSeleccionados([]);
+  };
+
+  const toggleItemPagoSeleccionado = (productoId: number) => {
+    setItemsPagoSeleccionados((prev) =>
+      prev.includes(productoId)
+        ? prev.filter((id) => id !== productoId)
+        : [...prev, productoId]
+    );
+  };
+
+  const agregarExtraCombo = (productoId: number) => {
+    if (!mesaSeleccionada) return;
+
+    const item = mesaSeleccionada.orden.find((p) => p.id === productoId);
+    if (!item || item.categoria !== "Combo") {
+      alert("El monto extra solo se puede agregar a productos tipo Combo.");
+      return;
+    }
+
+    const monto = prompt(`Monto extra para ${item.nombre}`);
+    if (monto === null) return;
+
+    const extra = Number(monto);
+    if (Number.isNaN(extra) || extra < 0) {
+      alert("Monto inválido.");
+      return;
+    }
+
+    actualizarMesa({
+      ...mesaSeleccionada,
+      orden: mesaSeleccionada.orden.map((p) =>
+        p.id === productoId
+          ? { ...p, montoExtra: (p.montoExtra || 0) + extra }
+          : p
+      ),
+    });
+  };
+
 const cobrar = () => {
   if (!mesaSeleccionada || mesaSeleccionada.orden.length === 0) return;
+
+  if (rol === "Caja" && !cajaAbierta) {
+    alert("Primero debés abrir la caja.");
+    return;
+  }
+
+  if (totalCobroActual <= 0 || itemsCobroActual.length === 0) {
+    alert("Seleccioná al menos un producto pendiente para cobrar.");
+    return;
+  }
+
+  if ((metodoPago === "Efectivo" || metodoPago === "Mixto") && montoRecibido < totalCobroActual) {
+    alert("El monto recibido no puede ser menor al total a cobrar.");
+    return;
+  }
 
   const venta: Venta = {
     id: Date.now(),
     fecha: new Date().toLocaleString("es-CR"),
     mesa: mesaSeleccionada.nombre,
     metodoPago,
-    total,
+    total: totalCobroActual,
     montoRecibido,
-    vuelto: montoRecibido > total ? montoRecibido - total : 0,
-    items: [...mesaSeleccionada.orden],
+    vuelto: montoRecibido > totalCobroActual ? montoRecibido - totalCobroActual : 0,
+    items: itemsCobroActual.map((item) => ({ ...item, pagado: true })),
+    esCuentaDividida: Boolean(mesaSeleccionada.cuentaDividida),
   };
+
+  const idsCobrados = new Set(itemsCobroActual.map((item) => item.id));
+  const ordenActualizada = mesaSeleccionada.orden.map((item) =>
+    idsCobrados.has(item.id) ? { ...item, pagado: true } : item
+  );
+  const todoPagado = ordenActualizada.every((item) => item.pagado);
 
   setReciboActual(venta);
   setVentas((prev) => [venta, ...prev]);
@@ -398,14 +591,17 @@ const cobrar = () => {
       setMesas((prev) =>
         prev.map((mesa) =>
           mesa.id === mesaSeleccionada.id
-            ? { ...mesa, estado: "Libre", orden: [] }
+            ? todoPagado
+              ? { ...mesa, estado: "Libre", orden: [], cuentaDividida: false }
+              : { ...mesa, estado: "Ocupada", orden: ordenActualizada }
             : mesa
         )
       );
 
-      setMesaId(null);
+      setMesaId(todoPagado ? null : mesaSeleccionada.id);
       setMetodoPago("Efectivo");
       setMontoRecibido(0);
+      setItemsPagoSeleccionados([]);
       setReciboActual(null);
     }, 700);
   }, 300);
@@ -476,6 +672,12 @@ const iniciarSesion = () => {
   setErrorLogin("");
 };
 const exportarCierrePDF = (cierre: CierreCaja) => {
+  const efectivoSistema = cierre.efectivoSistema ?? cierre.totalEfectivo ?? 0;
+  const montoApertura = cierre.montoApertura || 0;
+  const efectivoReportado = cierre.efectivoReportado || 0;
+  const efectivoSinApertura = cierre.efectivoReportadoSinApertura ?? (efectivoReportado - montoApertura);
+  const diferencia = cierre.diferenciaEfectivo ?? (efectivoSinApertura - efectivoSistema);
+
   const contenido = `
     <html>
       <head>
@@ -512,7 +714,10 @@ const exportarCierrePDF = (cierre: CierreCaja) => {
       <body>
         <h1>Cierre de Caja</h1>
 
-        <p><strong>Fecha:</strong> ${cierre.fecha}</p>
+        <p><strong>Fecha cierre:</strong> ${cierre.fecha}</p>
+        <p><strong>Fecha apertura:</strong> ${cierre.fechaApertura || "No registrada"}</p>
+        <p><strong>Usuario apertura:</strong> ${cierre.usuarioApertura || "No registrado"}</p>
+        <p><strong>Usuario cierre:</strong> ${cierre.usuarioCierre || "No registrado"}</p>
         <p><strong>Ventas:</strong> ${cierre.cantidadVentas}</p>
 
         <table>
@@ -522,28 +727,48 @@ const exportarCierrePDF = (cierre: CierreCaja) => {
           </tr>
 
           <tr>
-            <td>Efectivo</td>
-            <td>${formatoCRC(cierre.totalEfectivo)}</td>
+            <td>Monto apertura</td>
+            <td>${formatoCRC(montoApertura)}</td>
+          </tr>
+
+          <tr>
+            <td>Efectivo sistema</td>
+            <td>${formatoCRC(efectivoSistema)}</td>
+          </tr>
+
+          <tr>
+            <td>Efectivo digitado por cajero</td>
+            <td>${formatoCRC(efectivoReportado)}</td>
+          </tr>
+
+          <tr>
+            <td>Efectivo digitado sin apertura</td>
+            <td>${formatoCRC(efectivoSinApertura)}</td>
+          </tr>
+
+          <tr>
+            <td>Diferencia efectivo</td>
+            <td>${formatoCRC(diferencia)}</td>
           </tr>
 
           <tr>
             <td>Tarjeta</td>
-            <td>${formatoCRC(cierre.totalTarjeta)}</td>
+            <td>${formatoCRC(cierre.totalTarjeta || 0)}</td>
           </tr>
 
           <tr>
             <td>SINPE</td>
-            <td>${formatoCRC(cierre.totalSinpe)}</td>
+            <td>${formatoCRC(cierre.totalSinpe || 0)}</td>
           </tr>
 
           <tr>
             <td>Mixto</td>
-            <td>${formatoCRC(cierre.totalMixto)}</td>
+            <td>${formatoCRC(cierre.totalMixto || 0)}</td>
           </tr>
 
           <tr>
             <td><strong>TOTAL GENERAL</strong></td>
-            <td><strong>${formatoCRC(cierre.totalGeneral)}</strong></td>
+            <td><strong>${formatoCRC(cierre.totalGeneral || 0)}</strong></td>
           </tr>
         </table>
       </body>
@@ -581,6 +806,8 @@ const agregarProductoQR = (producto: Producto) => {
         nota: "",
         estadoCocina: "Pendiente",
         enviadoCocina: false,
+        pagado: false,
+        montoExtra: 0,
       },
     ]);
   }
@@ -608,6 +835,8 @@ const enviarPedidoQR = () => {
                 ...item,
                 nota: notaQR,
                 enviadoCocina: true,
+                pagado: false,
+                montoExtra: item.montoExtra || 0,
               })),
             ],
           }
@@ -857,12 +1086,14 @@ if (modoMenuQR && mesaQR) {
                 }}
               >
                 <span>
-                  {categoria === "Comidas"
+                  {categoria === "Comida"
                     ? "🌮"
-                    : categoria === "Bebidas"
+                    : categoria === "Refresco"
                     ? "🍹"
-                    : categoria === "Postres"
+                    : categoria === "Postre"
                     ? "🍮"
+                    : categoria === "Entrada"
+                    ? "🥑"
                     : "⭐"}
                 </span>
                 {categoria}
@@ -969,7 +1200,7 @@ const crearProducto = () => {
   setNuevoProducto({
     id: 0,
     nombre: "",
-    categoria: "Comidas",
+    categoria: "Comida",
     precio: 0,
   });
 };
@@ -1104,8 +1335,19 @@ const actualizarUsuario = (
   setMesaId(null);
 };
 const cerrarCaja = () => {
-  if (ventas.length === 0) {
-    alert("No hay ventas para cerrar.");
+  if (rol === "Caja" && !cajaAbierta) {
+    alert("No hay una caja abierta para cerrar.");
+    return;
+  }
+
+  if (!confirm("¿Seguro que quieres finalizar el día?")) return;
+
+  const efectivoDigitado = prompt("¿Cuánto dinero tienes en efectivo?");
+  if (efectivoDigitado === null) return;
+
+  const efectivoReportado = Number(efectivoDigitado);
+  if (Number.isNaN(efectivoReportado) || efectivoReportado < 0) {
+    alert("Monto inválido.");
     return;
   }
 
@@ -1126,10 +1368,20 @@ const cerrarCaja = () => {
     .reduce((acc, v) => acc + v.total, 0);
 
   const totalGeneral = ventas.reduce((acc, v) => acc + v.total, 0);
+  const montoApertura = cajaActual?.montoApertura || 0;
+  const efectivoReportadoSinApertura = efectivoReportado - montoApertura;
 
   const cierre: CierreCaja = {
     id: Date.now(),
     fecha: new Date().toLocaleString("es-CR"),
+    fechaApertura: cajaActual?.fechaApertura,
+    usuarioApertura: cajaActual?.usuario,
+    usuarioCierre: usuarioActual?.nombre || usuarioActual?.usuario || rol || "Usuario",
+    montoApertura,
+    efectivoSistema: totalEfectivo,
+    efectivoReportado,
+    efectivoReportadoSinApertura,
+    diferenciaEfectivo: efectivoReportadoSinApertura - totalEfectivo,
     totalEfectivo,
     totalTarjeta,
     totalSinpe,
@@ -1141,8 +1393,11 @@ const cerrarCaja = () => {
 
   setCierresCaja((prev) => [cierre, ...prev]);
   setVentas([]);
+  setCajaActual(null);
+  setVista(rol === "Admin" ? "inicio" : "mesas");
+  setMesaId(null);
 
-  alert("Caja cerrada correctamente.");
+  alert("Día finalizado correctamente.");
 };
   return (
   <div className="app-shell">
@@ -1443,6 +1698,27 @@ const cerrarCaja = () => {
 
       {vista === "mesas" && puedeUsarMesas && !mesaSeleccionada && (
         <div className="no-print">
+          {rol === "Caja" && !cajaAbierta && (
+            <div
+              style={{
+                background: "white",
+                borderRadius: 18,
+                padding: 22,
+                marginBottom: 20,
+                border: "2px solid #16a34a",
+                boxShadow: "0 10px 25px rgba(0,0,0,0.08)",
+              }}
+            >
+              <h2 style={{ marginTop: 0 }}>Abrir caja</h2>
+              <p>Para empezar a cobrar, registrá con cuánto efectivo inicia la caja.</p>
+              <button
+                onClick={abrirCaja}
+                style={{ ...btn, background: "#16a34a", color: "white" }}
+              >
+                Abrir caja
+              </button>
+            </div>
+          )}
           <div
   style={{
     marginBottom: 30,
@@ -1666,7 +1942,23 @@ const cerrarCaja = () => {
               Estado: <strong>{estadoMesaVisual(mesaSeleccionada)}</strong>
             </p>
 
-            {(rol === "Admin" || rol === "Mesero") && (
+            {ordenBloqueada && rol !== "Admin" && (
+              <div
+                style={{
+                  background: "#fff7ed",
+                  border: "1px solid #fdba74",
+                  color: "#9a3412",
+                  padding: 14,
+                  borderRadius: 12,
+                  marginBottom: 16,
+                  fontWeight: 800,
+                }}
+              >
+                🔒 Orden enviada a cocina. Desde este momento solo Admin puede modificar productos, cantidades o notas.
+              </div>
+            )}
+
+            {(rol === "Admin" || rol === "Mesero") && puedeEditarOrdenActual && (
               <>
                 <h3>Productos disponibles</h3>
 
@@ -1701,145 +1993,262 @@ const cerrarCaja = () => {
               <p>No hay productos en esta mesa.</p>
             )}
 
-            {mesaSeleccionada.orden.map((item) => (
-              <div key={item.id} style={itemRow}>
-                <div style={{ flex: 1 }}>
-                  <strong>{item.nombre}</strong>
-                  <br />
-                  <small>
-                    {item.enviadoCocina
-                      ? `En cocina: ${item.estadoCocina}`
-                      : "Sin enviar a cocina"}
-                  </small>
-                  <br />
-                  {(rol === "Admin" || rol === "Mesero") && (
-                    <input
-                      value={item.nota || ""}
-                      onChange={(e) => cambiarNota(item.id, e.target.value)}
-                      placeholder="Nota: sin cebolla, término medio..."
-                      style={{ width: "90%", marginTop: 6, padding: 8 }}
-                    />
+            {mesaSeleccionada.orden.map((item) => {
+              const puedeEditarLinea =
+                rol === "Admin" || (rol === "Mesero" && !ordenBloqueada && !item.enviadoCocina);
+              const seleccionadoParaPago = itemsPagoSeleccionados.includes(item.id);
+
+              return (
+                <div
+                  key={item.id}
+                  style={{
+                    ...itemRow,
+                    opacity: item.pagado ? 0.7 : 1,
+                    border: item.pagado ? "2px solid #86efac" : "1px solid transparent",
+                  }}
+                >
+                  {puedeCobrar && mesaSeleccionada.cuentaDividida && (
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        fontWeight: 900,
+                        color: item.pagado ? "#16a34a" : "#1f2937",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={Boolean(item.pagado) || seleccionadoParaPago}
+                        disabled={Boolean(item.pagado)}
+                        onChange={() => toggleItemPagoSeleccionado(item.id)}
+                      />
+                      {item.pagado ? "Pagado" : "Pagar ahora"}
+                    </label>
+                  )}
+
+                  <div style={{ flex: 1 }}>
+                    <strong>{item.nombre}</strong>{" "}
+                    <small>({item.categoria})</small>
+                    <br />
+                    <small>
+                      {item.enviadoCocina
+                        ? `En cocina: ${item.estadoCocina}`
+                        : "Sin enviar a cocina"}
+                      {item.pagado ? " · Pagado" : " · Pendiente de pago"}
+                    </small>
+                    <br />
+                    {(rol === "Admin" || rol === "Mesero") && (
+                      <input
+                        value={item.nota || ""}
+                        disabled={!puedeEditarLinea}
+                        onChange={(e) => cambiarNota(item.id, e.target.value)}
+                        placeholder="Nota: sin cebolla, término medio..."
+                        style={{
+                          width: "90%",
+                          marginTop: 6,
+                          padding: 8,
+                          opacity: puedeEditarLinea ? 1 : 0.65,
+                        }}
+                      />
+                    )}
+                    {item.montoExtra ? (
+                      <small style={{ display: "block", marginTop: 6, color: "#7c2d12", fontWeight: 900 }}>
+                        Extra combo: {formatoCRC(item.montoExtra)}
+                      </small>
+                    ) : null}
+                  </div>
+
+                  {puedeEditarLinea && (
+                    <div>
+                      <button
+                        onClick={() => cambiarCantidad(item.id, -1)}
+                        style={qtyBtn}
+                      >
+                        -
+                      </button>
+                      <span style={{ margin: "0 10px" }}>{item.cantidad}</span>
+                      <button
+                        onClick={() => cambiarCantidad(item.id, 1)}
+                        style={qtyBtn}
+                      >
+                        +
+                      </button>
+                    </div>
+                  )}
+
+                  {puedeCobrar && item.categoria === "Combo" && !item.pagado && (
+                    <button
+                      onClick={() => agregarExtraCombo(item.id)}
+                      style={{ ...btn, background: "#f59e0b", color: "white" }}
+                    >
+                      + Extra
+                    </button>
+                  )}
+
+                  <strong>{formatoCRC(totalItemOrden(item))}</strong>
+
+                  {puedeEditarLinea && (
+                    <button
+                      onClick={() => eliminarProducto(item.id)}
+                      style={{
+                        ...qtyBtn,
+                        background: "#fee2e2",
+                        color: "#dc2626",
+                        fontWeight: "bold",
+                      }}
+                    >
+                      🗑️
+                    </button>
                   )}
                 </div>
+              );
+            })}
 
-                {(rol === "Admin" || rol === "Mesero") && (
-                  <div>
-                    <button
-                      onClick={() => cambiarCantidad(item.id, -1)}
-                      style={qtyBtn}
-                    >
-                      -
-                    </button>
-                    <span style={{ margin: "0 10px" }}>{item.cantidad}</span>
-                    <button
-                      onClick={() => cambiarCantidad(item.id, 1)}
-                      style={qtyBtn}
-                    >
-                      +
-                    </button>
-                  </div>
-                )}
-
-                <strong>{formatoCRC(item.precio * item.cantidad)}</strong>
-
-                {(rol === "Admin" || rol === "Mesero") && (
-                  <button
-                    onClick={() => eliminarProducto(item.id)}
-                    style={{
-                      ...qtyBtn,
-                      background: "#fee2e2",
-                      color: "#dc2626",
-                      fontWeight: "bold",
-                    }}
-                  >
-                    🗑️
-                  </button>
-                )}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginTop: 20 }}>
+              <div style={statCard}>
+                <h3>Total orden</h3>
+                <h1>{formatoCRC(total)}</h1>
               </div>
-            ))}
-
-            <h2>Total: {formatoCRC(total)}</h2>
+              <div style={statCard}>
+                <h3>Pendiente</h3>
+                <h1>{formatoCRC(totalPendiente)}</h1>
+              </div>
+              <div style={statCard}>
+                <h3>A cobrar ahora</h3>
+                <h1>{formatoCRC(totalCobroActual)}</h1>
+              </div>
+            </div>
 
             {puedeCobrar && (
-  <>
-    <h3>Método de pago</h3>
+              <div
+                style={{
+                  background: "white",
+                  borderRadius: 16,
+                  padding: 18,
+                  marginTop: 20,
+                  border: "1px solid #e5e7eb",
+                }}
+              >
+                {rol === "Caja" && !cajaAbierta ? (
+                  <div>
+                    <h3>Caja cerrada</h3>
+                    <p>Antes de cobrar, abrí caja con el monto inicial.</p>
+                    <button
+                      onClick={abrirCaja}
+                      style={{ ...btn, background: "#16a34a", color: "white" }}
+                    >
+                      Abrir caja
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                      <div>
+                        <h3 style={{ margin: 0 }}>Cobro de orden</h3>
+                        <p style={{ margin: "6px 0 0" }}>
+                          {mesaSeleccionada.cuentaDividida
+                            ? "Cuenta dividida activa: seleccioná únicamente los productos que se pagan ahora."
+                            : "Cuenta normal: se cobra todo lo pendiente."}
+                        </p>
+                      </div>
+                      <button
+                        onClick={toggleCuentaDividida}
+                        style={{
+                          ...btn,
+                          background: mesaSeleccionada.cuentaDividida ? "#9333ea" : "#e9decf",
+                          color: mesaSeleccionada.cuentaDividida ? "white" : "#2c2017",
+                        }}
+                      >
+                        {mesaSeleccionada.cuentaDividida ? "Desactivar cuenta dividida" : "Activar cuenta dividida"}
+                      </button>
+                    </div>
 
-    <select
-      value={metodoPago}
-      onChange={(e) => setMetodoPago(e.target.value as MetodoPago)}
-      style={input}
-    >
-      <option>Efectivo</option>
-      <option>Tarjeta</option>
-      <option>SINPE</option>
-      <option>Mixto</option>
-    </select>
+                    {mesaSeleccionada.cuentaDividida && (
+                      <p style={{ color: "#7c2d12", fontWeight: 800 }}>
+                        Los productos marcados como pagados no vuelven a sumarse. La mesa se libera hasta que todo quede pagado.
+                      </p>
+                    )}
 
-    {(metodoPago === "Efectivo" || metodoPago === "Mixto") && (
-      <div style={{ marginTop: 12 }}>
-        <label>
-          <strong>Monto recibido</strong>
-        </label>
-        <br />
-        <input
-          type="number"
-          value={montoRecibido}
-          onChange={(e) => setMontoRecibido(Number(e.target.value))}
-          placeholder="Ej: 10000"
-          style={input}
-        />
+                    <h3>Método de pago</h3>
+                    <select
+                      value={metodoPago}
+                      onChange={(e) => setMetodoPago(e.target.value as MetodoPago)}
+                      style={input}
+                    >
+                      <option>Efectivo</option>
+                      <option>Tarjeta</option>
+                      <option>SINPE</option>
+                      <option>Mixto</option>
+                    </select>
 
-        <h3>
-          Vuelto:{" "}
-          {formatoCRC(
-            montoRecibido > total ? montoRecibido - total : 0
-          )}
-        </h3>
-      </div>
-    )}
-  </>
-)}
+                    {(metodoPago === "Efectivo" || metodoPago === "Mixto") && (
+                      <div style={{ marginTop: 12 }}>
+                        <label>
+                          <strong>Monto recibido</strong>
+                        </label>
+                        <br />
+                        <input
+                          type="number"
+                          value={montoRecibido}
+                          onChange={(e) => setMontoRecibido(Number(e.target.value))}
+                          placeholder="Ej: 10000"
+                          style={input}
+                        />
 
-           <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
-  {(rol === "Admin" || rol === "Mesero") && (
-    <button
-      onClick={enviarACocina}
-      style={{ ...btn, background: "#16a34a", color: "white" }}
-    >
-      Enviar a cocina
-    </button>
-  )}
+                        <h3>
+                          Vuelto: {formatoCRC(montoRecibido > totalCobroActual ? montoRecibido - totalCobroActual : 0)}
+                        </h3>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
 
-  {(rol === "Admin" || rol === "Mesero") && (
-    <button
-      onClick={solicitarCuenta}
-      style={{ ...btn, background: "#f59e0b", color: "white" }}
-    >
-      Solicitar cuenta
-    </button>
-  )}
+            <div style={{ display: "flex", gap: 10, marginTop: 20, flexWrap: "wrap" }}>
+              {(rol === "Admin" || rol === "Mesero") && puedeEditarOrdenActual && (
+                <button
+                  onClick={enviarACocina}
+                  style={{ ...btn, background: "#16a34a", color: "white" }}
+                >
+                  Enviar a cocina
+                </button>
+              )}
 
-  {(rol === "Admin" || rol === "Mesero") &&
-    estadoMesaVisual(mesaSeleccionada) === "Orden lista (recoger)" && (
-      <button
-        onClick={retirarOrdenLista}
-        style={{ ...btn,background: "#2563eb", color: "white" }}
-      >
-        Listo / Retirado
-      </button>
-    )}
+              {(rol === "Admin" || rol === "Mesero") && (
+                <button
+                  onClick={solicitarCuenta}
+                  style={{ ...btn, background: "#f59e0b", color: "white" }}
+                >
+                  Solicitar cuenta
+                </button>
+              )}
 
-  
+              {(rol === "Admin" || rol === "Mesero") &&
+                estadoMesaVisual(mesaSeleccionada) === "Orden lista (recoger)" && (
+                  <button
+                    onClick={retirarOrdenLista}
+                    style={{ ...btn, background: "#2563eb", color: "white" }}
+                  >
+                    Listo / Retirado
+                  </button>
+                )}
 
-  {puedeCobrar && (
-    <button
-      onClick={cobrar}
-      style={{ ...btn, background: "#2563eb", color: "white" }}
-    >
-      Cobrar
-    </button>
-  )}
-</div>
+              {puedeCobrar && (rol !== "Caja" || cajaAbierta) && (
+                <button
+                  onClick={cobrar}
+                  disabled={totalCobroActual <= 0}
+                  style={{
+                    ...btn,
+                    background: totalCobroActual <= 0 ? "#9ca3af" : "#2563eb",
+                    color: "white",
+                  }}
+                >
+                  Cobrar
+                </button>
+              )}
+            </div>
           </div>
 
           <div id="recibo" style={{ display: "none" }}>
@@ -1884,10 +2293,13 @@ const cerrarCaja = () => {
             <span>
               {item.cantidad}x {item.nombre}
             </span>
-            <strong>{formatoCRC(item.precio * item.cantidad)}</strong>
+            <strong>{formatoCRC(totalItemOrden(item))}</strong>
           </p>
 
           {item.nota && <small>Nota: {item.nota}</small>}
+          {item.montoExtra ? (
+            <small style={{ display: "block" }}>Extra combo: {formatoCRC(item.montoExtra)}</small>
+          ) : null}
         </div>
       ))}
 
@@ -2033,155 +2445,232 @@ const cerrarCaja = () => {
         </div>
       )}
       {vista === "cierre" && puedeCerrarCaja && (
-  <div className="no-print">
-    <h2>Cierre de caja</h2>
+        <div className="no-print">
+          <h2>Cierre de caja</h2>
 
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(4, 1fr)",
-        gap: 20,
-      }}
-    >
-      <div style={statCard}>
-        <h3>Efectivo</h3>
-        <h1>
-          {formatoCRC(
-            ventas
-              .filter((v) => v.metodoPago === "Efectivo")
-              .reduce((acc, v) => acc + v.total, 0)
+          {rol === "Caja" && (
+            <div
+              style={{
+                background: "white",
+                padding: 22,
+                borderRadius: 18,
+                border: "1px solid #e5e7eb",
+                maxWidth: 720,
+              }}
+            >
+              <h3>{cajaAbierta ? "Caja abierta" : "Caja cerrada"}</h3>
+              <p>
+                En este perfil no se muestran los montos calculados por el sistema.
+                Solo registrá apertura y cierre del día.
+              </p>
+
+              {!cajaAbierta ? (
+                <button
+                  onClick={abrirCaja}
+                  style={{ ...btn, background: "#16a34a", color: "white" }}
+                >
+                  Abrir caja
+                </button>
+              ) : (
+                <button
+                  onClick={cerrarCaja}
+                  style={{ ...btn, background: "#dc2626", color: "white" }}
+                >
+                  Cerrar día
+                </button>
+              )}
+            </div>
           )}
-        </h1>
-      </div>
 
-      <div style={statCard}>
-        <h3>Tarjeta</h3>
-        <h1>
-          {formatoCRC(
-            ventas
-              .filter((v) => v.metodoPago === "Tarjeta")
-              .reduce((acc, v) => acc + v.total, 0)
+          {rol === "Admin" && (
+            <>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(5, 1fr)",
+                  gap: 20,
+                }}
+              >
+                <div style={statCard}>
+                  <h3>Apertura</h3>
+                  <h1>{formatoCRC(cajaActual?.montoApertura || 0)}</h1>
+                </div>
+
+                <div style={statCard}>
+                  <h3>Efectivo sistema</h3>
+                  <h1>
+                    {formatoCRC(
+                      ventas
+                        .filter((v) => v.metodoPago === "Efectivo")
+                        .reduce((acc, v) => acc + v.total, 0)
+                    )}
+                  </h1>
+                </div>
+
+                <div style={statCard}>
+                  <h3>Tarjeta</h3>
+                  <h1>
+                    {formatoCRC(
+                      ventas
+                        .filter((v) => v.metodoPago === "Tarjeta")
+                        .reduce((acc, v) => acc + v.total, 0)
+                    )}
+                  </h1>
+                </div>
+
+                <div style={statCard}>
+                  <h3>SINPE</h3>
+                  <h1>
+                    {formatoCRC(
+                      ventas
+                        .filter((v) => v.metodoPago === "SINPE")
+                        .reduce((acc, v) => acc + v.total, 0)
+                    )}
+                  </h1>
+                </div>
+
+                <div style={statCard}>
+                  <h3>Mixto</h3>
+                  <h1>
+                    {formatoCRC(
+                      ventas
+                        .filter((v) => v.metodoPago === "Mixto")
+                        .reduce((acc, v) => acc + v.total, 0)
+                    )}
+                  </h1>
+                </div>
+              </div>
+
+              <button
+                onClick={cerrarCaja}
+                style={{
+                  ...btn,
+                  background: "#dc2626",
+                  color: "white",
+                  marginTop: 20,
+                }}
+              >
+                Cerrar día
+              </button>
+
+              <h3 style={{ marginTop: 30 }}>Historial cierres</h3>
+
+              {cierresCaja.length === 0 && <p>No hay cierres registrados.</p>}
+
+              {cierresCaja.map((cierre) => (
+                <div
+                  key={cierre.id}
+                  style={{
+                    ...itemRow,
+                    flexDirection: "column",
+                    alignItems: "flex-start",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "100%",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 12,
+                    }}
+                  >
+                    <div>
+                      <strong>{cierre.fecha}</strong>
+                      <br />
+                      <small>{cierre.cantidadVentas} ventas procesadas</small>
+                      {cierre.usuarioCierre && (
+                        <small style={{ display: "block" }}>Cerró: {cierre.usuarioCierre}</small>
+                      )}
+                    </div>
+
+                    <strong>{formatoCRC(cierre.totalGeneral || 0)}</strong>
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 12,
+                      display: "grid",
+                      gridTemplateColumns: "repeat(4, 1fr)",
+                      width: "100%",
+                      gap: 10,
+                    }}
+                  >
+                    <div>
+                      <small>Apertura</small>
+                      <br />
+                      <strong>{formatoCRC(cierre.montoApertura || 0)}</strong>
+                    </div>
+
+                    <div>
+                      <small>Efectivo sistema</small>
+                      <br />
+                      <strong>{formatoCRC(cierre.efectivoSistema ?? cierre.totalEfectivo ?? 0)}</strong>
+                    </div>
+
+                    <div>
+                      <small>Efectivo digitado</small>
+                      <br />
+                      <strong>{formatoCRC(cierre.efectivoReportado || 0)}</strong>
+                    </div>
+
+                    <div>
+                      <small>Diferencia sin apertura</small>
+                      <br />
+                      <strong>{formatoCRC(cierre.diferenciaEfectivo || 0)}</strong>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 12,
+                      display: "grid",
+                      gridTemplateColumns: "repeat(4, 1fr)",
+                      width: "100%",
+                      gap: 10,
+                    }}
+                  >
+                    <div>
+                      <small>Tarjeta</small>
+                      <br />
+                      <strong>{formatoCRC(cierre.totalTarjeta || 0)}</strong>
+                    </div>
+
+                    <div>
+                      <small>SINPE</small>
+                      <br />
+                      <strong>{formatoCRC(cierre.totalSinpe || 0)}</strong>
+                    </div>
+
+                    <div>
+                      <small>Mixto</small>
+                      <br />
+                      <strong>{formatoCRC(cierre.totalMixto || 0)}</strong>
+                    </div>
+
+                    <div>
+                      <small>Total vendido</small>
+                      <br />
+                      <strong>{formatoCRC(cierre.totalGeneral || 0)}</strong>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => exportarCierrePDF(cierre)}
+                    style={{
+                      ...btn,
+                      marginTop: 14,
+                      background: "#2563eb",
+                      color: "white",
+                    }}
+                  >
+                    Exportar PDF
+                  </button>
+                </div>
+              ))}
+            </>
           )}
-        </h1>
-      </div>
-
-      <div style={statCard}>
-        <h3>SINPE</h3>
-        <h1>
-          {formatoCRC(
-            ventas
-              .filter((v) => v.metodoPago === "SINPE")
-              .reduce((acc, v) => acc + v.total, 0)
-          )}
-        </h1>
-      </div>
-
-      <div style={statCard}>
-        <h3>Total</h3>
-        <h1>
-          {formatoCRC(
-            ventas.reduce((acc, v) => acc + v.total, 0)
-          )}
-        </h1>
-      </div>
-    </div>
-
-    <button
-      onClick={cerrarCaja}
-      style={{
-        ...btn,
-        background: "#dc2626",
-        color: "white",
-        marginTop: 20,
-      }}
-    >
-      Cerrar caja
-    </button>
-
-    {puedeExportarPDF && (
-  <>
-    <h3 style={{ marginTop: 30 }}>Historial cierres</h3>
-
-    {cierresCaja.length === 0 && (
-      <p>No hay cierres registrados.</p>
-    )}
-
-    {cierresCaja.map((cierre) => (
-      <div
-        key={cierre.id}
-        style={{
-          ...itemRow,
-          flexDirection: "column",
-          alignItems: "flex-start",
-        }}
-      >
-        <div
-          style={{
-            width: "100%",
-            display: "flex",
-            justifyContent: "space-between",
-          }}
-        >
-          <div>
-            <strong>{cierre.fecha}</strong>
-            <br />
-            <small>{cierre.cantidadVentas} ventas procesadas</small>
-          </div>
-
-          <strong>{formatoCRC(cierre.totalGeneral)}</strong>
         </div>
-
-        <div
-          style={{
-            marginTop: 12,
-            display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
-            width: "100%",
-            gap: 10,
-          }}
-        >
-          <div>
-            <small>Efectivo</small>
-            <br />
-            <strong>{formatoCRC(cierre.totalEfectivo)}</strong>
-          </div>
-
-          <div>
-            <small>Tarjeta</small>
-            <br />
-            <strong>{formatoCRC(cierre.totalTarjeta)}</strong>
-          </div>
-
-          <div>
-            <small>SINPE</small>
-            <br />
-            <strong>{formatoCRC(cierre.totalSinpe)}</strong>
-          </div>
-
-          <div>
-            <small>Mixto</small>
-            <br />
-            <strong>{formatoCRC(cierre.totalMixto)}</strong>
-          </div>
-        </div>
-
-        <button
-          onClick={() => exportarCierrePDF(cierre)}
-          style={{
-            ...btn,
-            marginTop: 14,
-            background: "#2563eb",
-            color: "white",
-          }}
-        >
-          Exportar PDF
-        </button>
-      </div>
-    ))}
-  </>
-)}
-  </div>
-)}
+      )}
 {vista === "qr" && rol === "Admin" && (
   <div className="no-print">
     <h2>QR de mesas</h2>
@@ -2291,14 +2780,16 @@ const cerrarCaja = () => {
           onChange={(e) =>
             setNuevoProducto((prev) => ({
               ...prev,
-              categoria: e.target.value,
+              categoria: e.target.value as CategoriaProducto,
             }))
           }
           style={input}
         >
-          <option>Comidas</option>
-          <option>Bebidas</option>
-          <option>Postres</option>
+          {categoriasProducto.map((categoria) => (
+            <option key={categoria} value={categoria}>
+              {categoria}
+            </option>
+          ))}
         </select>
 
         <input
@@ -2367,9 +2858,11 @@ const cerrarCaja = () => {
         marginBottom: 10,
       }}
     >
-      <option>Comidas</option>
-      <option>Bebidas</option>
-      <option>Postres</option>
+      {categoriasProducto.map((categoria) => (
+        <option key={categoria} value={categoria}>
+          {categoria}
+        </option>
+      ))}
     </select>
 
     <input
