@@ -676,7 +676,7 @@ const exportarCierrePDF = (cierre: CierreCaja) => {
   const montoApertura = cierre.montoApertura || 0;
   const efectivoReportado = cierre.efectivoReportado || 0;
   const efectivoSinApertura = cierre.efectivoReportadoSinApertura ?? (efectivoReportado - montoApertura);
-  const diferencia = cierre.diferenciaEfectivo ?? (efectivoSinApertura - efectivoSistema);
+  const diferencia = cierre.diferenciaEfectivo ?? (efectivoReportado - efectivoSistema);
 
   const contenido = `
     <html>
@@ -2614,7 +2614,7 @@ const cerrarCaja = () => {
                     </div>
 
                     <div>
-                      <small>Diferencia sin apertura</small>
+                      <small>Diferencia de caja</small>
                       <br />
                       <strong>{formatoCRC(cierre.diferenciaEfectivo || 0)}</strong>
                     </div>
