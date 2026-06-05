@@ -676,7 +676,7 @@ const exportarCierrePDF = (cierre: CierreCaja) => {
   const montoApertura = cierre.montoApertura || 0;
   const efectivoReportado = cierre.efectivoReportado || 0;
   const efectivoSinApertura = cierre.efectivoReportadoSinApertura ?? (efectivoReportado - montoApertura);
-  const diferencia = cierre.diferenciaEfectivo ?? (efectivoReportado - efectivoSistema);
+  const diferencia = efectivoSistema - efectivoReportado;
 
   const contenido = `
     <html>
@@ -747,7 +747,7 @@ const exportarCierrePDF = (cierre: CierreCaja) => {
           </tr>
 
           <tr>
-            <td>Diferencia efectivo</td>
+            <td>Diferencia efectivo (sistema - digitado)</td>
             <td>${formatoCRC(diferencia)}</td>
           </tr>
 
@@ -1381,7 +1381,7 @@ const cerrarCaja = () => {
     efectivoSistema: totalEfectivo,
     efectivoReportado,
     efectivoReportadoSinApertura,
-    diferenciaEfectivo: efectivoReportado - totalEfectivo,
+    diferenciaEfectivo: totalEfectivo - efectivoReportado,
     totalEfectivo,
     totalTarjeta,
     totalSinpe,
@@ -2616,7 +2616,7 @@ const cerrarCaja = () => {
                     <div>
                       <small>Diferencia de caja</small>
                       <br />
-                      <strong>{formatoCRC(cierre.diferenciaEfectivo || 0)}</strong>
+                      <strong>{formatoCRC((cierre.efectivoSistema ?? cierre.totalEfectivo ?? 0) - (cierre.efectivoReportado || 0))}</strong>
                     </div>
                   </div>
 
