@@ -978,7 +978,7 @@ export default function App() {
           />
           {errorLogin && <strong className="error-login">{errorLogin}</strong>}
           <button onClick={iniciarSesion}>Entrar</button>
-          <small>Usuarios: jefe, admin, caja, caja_mesero, mesero · clave 1234</small>
+          
         </div>
       </div>
     );
