@@ -277,6 +277,7 @@ export default function App() {
   const [errorLogin, setErrorLogin] = useState("");
 
   const [vista, setVista] = useState<Vista>("inicio");
+  const [categoriaActiva, setCategoriaActiva] = useState<CategoriaProducto>("Tacos");
   const [productos, setProductos] = useState<Producto[]>(() => cargarLocalStorage("gato_productos", productosGato));
   const [mesas, setMesas] = useState<Mesa[]>(() => cargarLocalStorage("gato_mesas", crearMesasIniciales()));
   const [mesaId, setMesaId] = useState<number | null>(null);
@@ -548,8 +549,8 @@ export default function App() {
     }
     const mesaActualizada = { ...mesaSeleccionada, orden: mesaSeleccionada.orden.map((item) => ({ ...item, enviadoComanda: true })) };
     actualizarMesa(mesaActualizada);
-    setTicketActual({ tipo: "comanda", mesa: mesaActualizada, items: itemsNuevos, usuario: usuarioActual?.nombre || rol || "Usuario", fecha: new Date().toLocaleString("es-CR") });
-    setTimeout(() => window.print(), 250);
+    const ticketComanda: Ticket = { tipo: "comanda", mesa: mesaActualizada, items: itemsNuevos, usuario: usuarioActual?.nombre || rol || "Usuario", fecha: new Date().toLocaleString("es-CR") };
+    void imprimirTicket(ticketComanda);
   };
 
   const solicitarCuenta = () => {
@@ -619,10 +620,9 @@ export default function App() {
     const todoPagado = ordenActualizada.every((item) => item.pagado);
     setVentas((prev) => [venta, ...prev]);
     setMovimientosCaja((prev) => [movimiento, ...prev]);
-    setTicketActual({ tipo: "factura", venta });
+    const ticketFactura: Ticket = { tipo: "factura", venta };
+    void imprimirTicket(ticketFactura);
     setTimeout(() => {
-      window.print();
-      setTimeout(() => {
         setMesas((prev) =>
           prev
             .map((mesa) => {
@@ -639,13 +639,12 @@ export default function App() {
         setMetodoPago("Efectivo");
         setMontoRecibido(0);
         setItemsPagoSeleccionados([]);
-      }, 500);
-    }, 250);
+    }, 700);
   };
 
   const reimprimirFactura = (venta: Venta) => {
-    setTicketActual({ tipo: "factura", venta });
-    setTimeout(() => window.print(), 250);
+    const ticketFactura: Ticket = { tipo: "factura", venta };
+    void imprimirTicket(ticketFactura);
   };
 
   const imprimirCierre = (cierre: CierreCaja) => {
@@ -653,8 +652,8 @@ export default function App() {
       alert("Solo Admin o Jefe puede imprimir el cierre detallado.");
       return;
     }
-    setTicketActual({ tipo: "cierre", cierre });
-    setTimeout(() => window.print(), 250);
+    const ticketCierre: Ticket = { tipo: "cierre", cierre };
+    void imprimirTicket(ticketCierre);
   };
 
   const abrirCaja = () => {
@@ -906,6 +905,124 @@ export default function App() {
     setNotaQR("");
   };
 
+
+  const limpiarTextoTicket = (texto: string) =>
+    texto
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/₡/g, "CRC ")
+      .replace(/[“”]/g, '"')
+      .replace(/[‘’]/g, "'");
+
+  const lineaTicket = (izquierda: string, derecha = "", ancho = 42) => {
+    const izq = limpiarTextoTicket(izquierda).slice(0, ancho);
+    const der = limpiarTextoTicket(derecha).slice(0, Math.max(0, ancho - 2));
+    const espacios = Math.max(1, ancho - izq.length - der.length);
+    return `${izq}${" ".repeat(espacios)}${der}`;
+  };
+
+  const ticketComoTexto = (ticket: Ticket) => {
+    const sep = "------------------------------------------";
+    const lineas: string[] = [];
+    const add = (valor = "") => lineas.push(limpiarTextoTicket(valor));
+    const itemLineas = (item: ItemOrden) => {
+      add(lineaTicket(`${item.cantidad}x ${item.nombre}`, formatoCRC(precioLinea(item))));
+      if (item.consumo === "LLEVAR") add("  PARA LLEVAR");
+      if (item.sinIngredientes.length) add(`  SIN: ${item.sinIngredientes.join(", ")}`);
+      if (item.extras.length) add(`  EXTRA: ${item.extras.map((e) => e.nombre).join(", ")}`);
+      if (item.nota.trim()) add(`  NOTA: ${item.nota.trim()}`);
+    };
+
+    if (ticket.tipo === "comanda") {
+      add("             COMANDA");
+      add(new Date().toLocaleDateString("es-CR"));
+      add(ticket.mesa.tipoOrden === "LLEVAR" ? "             LLEVAR" : `             ${ticket.mesa.nombre}`);
+      add(sep);
+      add(`A nombre de: ${ticket.mesa.cliente || "Cliente"}`);
+      add(`Salonero: ${ticket.usuario}`);
+      add(`Hora: ${ticket.fecha}`);
+      add(`Mesa: ${ticket.mesa.nombre}`);
+      add("Pacayas");
+      add(sep);
+      ticket.items.forEach(itemLineas);
+      add(sep);
+      add("******* ULTIMA LINEA *******");
+      return `${lineas.join("\n")}\n\n\n`;
+    }
+
+    if (ticket.tipo === "cierre") {
+      const cierre = ticket.cierre;
+      add("          GATO CALAVERA");
+      add("          CIERRE TURNO");
+      add(sep);
+      add(cierre.fecha);
+      add(`Usuario: ${cierre.usuario}`);
+      add(sep);
+      add(lineaTicket("Fondo vuelto", formatoCRC(cierre.montoApertura)));
+      add(lineaTicket("Total vendido", formatoCRC(cierre.totalGeneral)));
+      add(lineaTicket("Efectivo ventas", formatoCRC(cierre.efectivoVentas)));
+      add(lineaTicket("Tarjeta", formatoCRC(cierre.tarjeta)));
+      add(lineaTicket("SINPE", formatoCRC(cierre.sinpe)));
+      add(lineaTicket("Salidas", formatoCRC(cierre.salidas)));
+      add(lineaTicket("Esperado caja", formatoCRC(cierre.efectivoEsperado)));
+      add(lineaTicket("Contado", formatoCRC(cierre.efectivoReportado)));
+      add(lineaTicket("Diferencia", formatoCRC(cierre.diferencia)));
+      add(sep);
+      add("PRODUCTOS");
+      Object.entries(cierre.productosVendidos || {}).forEach(([producto, cantidad]) => add(`${producto}: ${cantidad}`));
+      add(sep);
+      add("******** FIN CIERRE ********");
+      return `${lineas.join("\n")}\n\n\n`;
+    }
+
+    const venta = ticket.venta;
+    add("          GATO CALAVERA");
+    add("          COMIDA MEXICANA");
+    add("Gato Calavera Pacayas");
+    add("Alessandro Rubi Silesky");
+    add("ID No: 1-1835-0862");
+    add("alessandrorubi6@gmail.com");
+    add("Telefono: 7229-3155");
+    add("              FACTURA");
+    add(sep);
+    add(`Fecha apertura: ${venta.fechaApertura}`);
+    add(`Fecha cierre: ${venta.fechaCierre}`);
+    add(`Cuenta: ${venta.cuenta}   Mesa: ${venta.mesa}`);
+    add(`Invitados: ${venta.invitados}`);
+    add(`Nombre: ${venta.cliente}`);
+    add(sep);
+    venta.items.forEach(itemLineas);
+    add(sep);
+    add(lineaTicket("SubTotal", formatoCRC(venta.subtotal)));
+    if (venta.servicio > 0) add(lineaTicket("10% Servicio", formatoCRC(venta.servicio)));
+    add(lineaTicket("Total", formatoCRC(venta.total)));
+    if (venta.metodoPago === "Efectivo" || venta.metodoPago === "Mixto") {
+      add(lineaTicket("Recibido", formatoCRC(venta.montoRecibido)));
+      add(lineaTicket("Vuelto", formatoCRC(venta.vuelto)));
+    }
+    add(sep);
+    add("Condicion de venta: Contado");
+    add(`Metodo de pago: ${venta.metodoPago}`);
+    add("Moneda: CRC");
+    add(sep);
+    add("Regimen de Tributacion simplificada");
+    return `${lineas.join("\n")}\n\n\n`;
+  };
+
+  const imprimirTicket = async (ticket: Ticket) => {
+    setTicketActual(ticket);
+    try {
+      const respuesta = await fetch("http://127.0.0.1:5055/print", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tipo: ticket.tipo, texto: ticketComoTexto(ticket) }),
+      });
+      if (!respuesta.ok) throw new Error("Servicio de impresora no disponible");
+    } catch {
+      setTimeout(() => window.print(), 250);
+    }
+  };
+
   const imprimirQR = () => window.print();
   const baseMenuPublico = ((import.meta.env.VITE_MENU_PUBLIC_URL as string | undefined) || window.location.origin).replace(/\/$/, "");
   const rutaMenuPublico = window.location.pathname === "/" ? "" : window.location.pathname;
@@ -929,7 +1046,7 @@ export default function App() {
             <div className="skull">💀</div>
             <h1 className="menu-title">SPECIAL MENU</h1>
             <div className="sombrero">🌮</div>
-            <p> Gato Calabera · MESA {mesaQR}</p>
+            <p>ANTOJITOS MEXICANOS · MESA {mesaQR}</p>
             <span className="menu-label">MENÚ</span>
           </div>
 
@@ -953,7 +1070,20 @@ export default function App() {
             ))}
           </div>
 
-         
+          <div className="qr-order-box">
+            <h2>Tu pedido</h2>
+            {ordenQR.length === 0 ? <p>Tocá los productos del menú para agregarlos.</p> : null}
+            {ordenQR.map((item) => (
+              <div key={item.uid} className="qr-order-line">
+                <span>{item.nombre}</span>
+                <b>{formatoCRC(precioLinea(item))}</b>
+                <button onClick={() => setOrdenQR((prev) => prev.filter((p) => p.uid !== item.uid))}>×</button>
+              </div>
+            ))}
+            <textarea value={notaQR} onChange={(e) => setNotaQR(e.target.value)} placeholder="Notas para cocina" />
+            <h3>{formatoCRC(totalQR)}</h3>
+            <button onClick={enviarPedidoQR}>Enviar pedido</button>
+          </div>
 
           <div className="menu-footer">🌵 🌶️ 🪅 🌮 🌵<h2>¡Buen provecho!</h2></div>
         </div>
@@ -978,7 +1108,7 @@ export default function App() {
           />
           {errorLogin && <strong className="error-login">{errorLogin}</strong>}
           <button onClick={iniciarSesion}>Entrar</button>
-          
+          <small>Usuarios: jefe, admin, caja, caja_mesero, mesero · clave 1234</small>
         </div>
       </div>
     );
@@ -1082,87 +1212,167 @@ export default function App() {
 
             {ordenBloqueada && !puedeEditarOrdenActual && <div className="alert">Orden bloqueada para edición. Solo Jefe o Admin puede agregar, quitar o modificar productos.</div>}
 
-            {puedeEditarOrdenActual && (
-              <div className="product-picker">
-                {categoriasProducto.map((categoria) => (
-                  <div key={categoria}>
-                    <h3>{categoria}</h3>
-                    <div className="product-buttons">
-                      {productos.filter((producto) => producto.categoria === categoria).map((producto) => (
-                        <button key={producto.id} onClick={() => agregarProductoOrden(producto)}>
-                          <b>{producto.nombre}</b><small>{producto.descripcion}</small><span>{formatoCRC(producto.precio)}</span>
+            <div className="pos-order-workspace">
+              {puedeEditarOrdenActual && (
+                <div className="pos-products-panel">
+                  <div className="category-card-tabs">
+                    {categoriasProducto.map((categoria) => {
+                      const cantidadCategoria = mesaSeleccionada.orden
+                        .filter((item) => item.categoria === categoria && !item.pagado)
+                        .reduce((acc, item) => acc + item.cantidad, 0);
+                      return (
+                        <button
+                          key={categoria}
+                          className={categoriaActiva === categoria ? "active" : ""}
+                          onClick={() => setCategoriaActiva(categoria)}
+                        >
+                          <span>{categoria === "Tacos" ? "🌮" : categoria === "Hamburguesas" ? "🍔" : categoria === "Papas" ? "🍟" : categoria === "Bebidas" ? "🥤" : "🌯"}</span>
+                          <b>{categoria}</b>
+                          {cantidadCategoria > 0 && <small>{cantidadCategoria}</small>}
                         </button>
-                      ))}
-                    </div>
+                      );
+                    })}
                   </div>
-                ))}
-              </div>
-            )}
+                  <div className="product-card-grid-pos">
+                    {productos.filter((producto) => producto.categoria === categoriaActiva).map((producto) => {
+                      const cantidadEnOrden = mesaSeleccionada.orden
+                        .filter((item) => item.id === producto.id && !item.pagado)
+                        .reduce((acc, item) => acc + item.cantidad, 0);
+                      return (
+                        <button
+                          key={producto.id}
+                          className={`product-pos-card ${cantidadEnOrden > 0 ? "selected" : ""}`}
+                          onClick={() => agregarProductoOrden(producto)}
+                        >
+                          <span className="product-pos-icon">{producto.categoria === "Tacos" ? "🌮" : producto.categoria === "Hamburguesas" ? "🍔" : producto.categoria === "Papas" ? "🍟" : producto.categoria === "Bebidas" ? "🥤" : "🌯"}</span>
+                          <strong>{producto.nombre}</strong>
+                          <small>{producto.descripcion}</small>
+                          <b>{formatoCRC(producto.precio)}</b>
+                          {cantidadEnOrden > 0 && <em>{cantidadEnOrden} en orden</em>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
-            <h2>Orden</h2>
-            {mesaSeleccionada.orden.length === 0 && <p>No hay productos agregados.</p>}
-            {mesaSeleccionada.orden.map((item) => (
-              <div key={item.uid} className="order-item">
-                <div className="item-main">
-                  <h3>{item.cantidad}x {item.nombre} <span className={item.consumo === "LOCAL" ? "tag-local" : "tag-llevar"}>{item.consumo === "LOCAL" ? "Local +10%" : "Llevar sin 10%"}</span></h3>
-                  <p>{item.descripcion}</p>
-                  {item.sinIngredientes.length > 0 && <small>SIN: {item.sinIngredientes.join(", ")}</small>}
-                  {item.extras.length > 0 && <small>EXTRAS: {item.extras.map((extra) => `${extra.nombre} ${formatoCRC(extra.precio)}`).join(", ")}</small>}
-                  <textarea disabled={!puedeEditarOrdenActual} value={item.nota} onChange={(e) => actualizarItem(item.uid, { nota: e.target.value })} placeholder="Nota para cocina" />
-                  {puedeEditarOrdenActual && (
-                    <div className="mod-grid">
-                      {item.ingredientes.map((ingrediente) => (
-                        <label key={ingrediente}><input type="checkbox" checked={item.sinIngredientes.includes(ingrediente)} onChange={() => toggleIngrediente(item, ingrediente)} /> Sin {ingrediente}</label>
+              <div className="pos-order-panel">
+                <div className="order-list-panel">
+                  <div className="order-list-title">
+                    <h2>Orden</h2>
+                    <small>{mesaSeleccionada.orden.length} productos</small>
+                  </div>
+                  {mesaSeleccionada.orden.length === 0 && <p className="empty-order-text">Tocá un producto para agregarlo.</p>}
+                  <div className="order-items-grid">
+                    {mesaSeleccionada.orden.map((item) => {
+                      const tieneModificaciones = Boolean(item.nota.trim() || item.sinIngredientes.length || item.extras.length);
+                      return (
+                        <div key={item.uid} className="order-item tile-order-item">
+                          <div className="tile-order-header">
+                            <div className="tile-order-title">
+                              <h3>{item.cantidad}x {item.nombre}</h3>
+                              <p>{item.descripcion}</p>
+                            </div>
+                            <b>{formatoCRC(precioLinea(item))}</b>
+                          </div>
+
+                          {tieneModificaciones && (
+                            <div className="tile-order-summary">
+                              {item.sinIngredientes.length > 0 && <span>SIN: {item.sinIngredientes.join(", ")}</span>}
+                              {item.extras.length > 0 && <span>EXTRAS: {item.extras.map((extra) => `${extra.nombre} ${formatoCRC(extra.precio)}`).join(", ")}</span>}
+                              {item.nota.trim() && <span>NOTA: {item.nota}</span>}
+                            </div>
+                          )}
+
+                          <div className="tile-order-actions">
+                            <details className="modifier-details inline-edit-details">
+                              <summary>{puedeEditarOrdenActual ? "▶ Editar" : "▶ Detalle"}</summary>
+                              <div className="modifier-body inline-edit-body">
+                                <textarea disabled={!puedeEditarOrdenActual} value={item.nota} onChange={(e) => actualizarItem(item.uid, { nota: e.target.value })} placeholder="Nota para cocina" />
+                                {puedeEditarOrdenActual ? (
+                                  <div className="mod-grid compact-mod-grid">
+                                    {item.ingredientes.map((ingrediente) => (
+                                      <label key={ingrediente}><input type="checkbox" checked={item.sinIngredientes.includes(ingrediente)} onChange={() => toggleIngrediente(item, ingrediente)} /> Sin {ingrediente}</label>
+                                    ))}
+                                    {extrasDisponibles.map((extra) => (
+                                      <label key={extra.nombre}><input type="checkbox" checked={item.extras.some((e) => e.nombre === extra.nombre)} onChange={() => toggleExtra(item, extra)} /> {extra.nombre} {formatoCRC(extra.precio)}</label>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div className="read-only-mods">
+                                    {item.sinIngredientes.length > 0 && <p><b>SIN:</b> {item.sinIngredientes.join(", ")}</p>}
+                                    {item.extras.length > 0 && <p><b>EXTRAS:</b> {item.extras.map((extra) => `${extra.nombre} ${formatoCRC(extra.precio)}`).join(", ")}</p>}
+                                    {item.nota.trim() && <p><b>NOTA:</b> {item.nota}</p>}
+                                    {!tieneModificaciones && <p>Sin modificaciones.</p>}
+                                  </div>
+                                )}
+                              </div>
+                            </details>
+
+                            <label className="carry-check">
+                              <input
+                                type="checkbox"
+                                checked={item.consumo === "LLEVAR"}
+                                disabled={!puedeEditarOrdenActual}
+                                onChange={() => cambiarConsumoItem(item.uid, item.consumo === "LOCAL" ? "LLEVAR" : "LOCAL")}
+                              />
+                              Llevar
+                            </label>
+
+                            {puedeEditarOrdenActual && (
+                              <div className="qty-control tile-qty-control">
+                                <button onClick={() => cambiarCantidad(item.uid, -1)}>-</button>
+                                <span>{item.cantidad}</span>
+                                <button onClick={() => cambiarCantidad(item.uid, 1)}>+</button>
+                              </div>
+                            )}
+
+                            {puedeEditarOrdenActual && <button className="danger-mini tile-delete-button" onClick={() => eliminarItem(item.uid)}>Eliminar</button>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="pos-bottom-fixed">
+                  <div className="totals-box">
+                    <div><span>Subtotal</span><b>{formatoCRC(totalesMesa.subtotal)}</b></div>
+                    <div><span>10% Servicio</span><b>{formatoCRC(totalesMesa.servicio)}</b></div>
+                    <div><span>Total pendiente</span><b>{formatoCRC(totalesMesa.total)}</b></div>
+                  </div>
+
+                  {puedeCobrar && cuentaSolicitada && (
+                    <div className="pay-box">
+                      {!cajaAbierta ? <button onClick={abrirCaja} className="primary">Abrir caja</button> : null}
+                      <button onClick={toggleCuentaDividida}>{mesaSeleccionada.cuentaDividida ? "Desactivar cuenta dividida" : "Cuenta dividida"}</button>
+                      {mesaSeleccionada.cuentaDividida && mesaSeleccionada.orden.map((item) => !item.pagado && (
+                        <label key={item.uid} className="pay-check"><input type="checkbox" checked={itemsPagoSeleccionados.includes(item.uid)} onChange={() => toggleItemPago(item.uid)} /> {item.nombre}</label>
                       ))}
-                      {extrasDisponibles.map((extra) => (
-                        <label key={extra.nombre}><input type="checkbox" checked={item.extras.some((e) => e.nombre === extra.nombre)} onChange={() => toggleExtra(item, extra)} /> {extra.nombre} {formatoCRC(extra.precio)}</label>
-                      ))}
+                      <select value={metodoPago} onChange={(e) => setMetodoPago(e.target.value as MetodoPago)}><option>Efectivo</option><option>Tarjeta</option><option>SINPE</option><option>Mixto</option></select>
+                      {pagoUsaEfectivo && (
+                        <div className="cash-change-box">
+                          <input type="number" value={montoRecibido} onChange={(e) => setMontoRecibido(Number(e.target.value))} placeholder="Monto recibido" />
+                          <div className="cash-quick-buttons">
+                            {[5000, 10000, 20000].map((monto) => <button key={monto} type="button" onClick={() => setMontoRecibido(monto)}>{formatoCRC(monto)}</button>)}
+                          </div>
+                          <div className="change-summary">
+                            <span>Recibido: <b>{formatoCRC(montoRecibido)}</b></span>
+                            <span>Vuelto: <b>{formatoCRC(vueltoActual)}</b></span>
+                          </div>
+                        </div>
+                      )}
+                      <h2>A cobrar: {formatoCRC(totalesCobro.total)}</h2>
                     </div>
                   )}
-                </div>
-                <div className="item-actions">
-                  <b>{formatoCRC(precioLinea(item))}</b>
-                  {puedeEditarOrdenActual && <><button onClick={() => cambiarCantidad(item.uid, -1)}>-</button><span>{item.cantidad}</span><button onClick={() => cambiarCantidad(item.uid, 1)}>+</button></>}
-                  <button disabled={!puedeEditarOrdenActual} onClick={() => cambiarConsumoItem(item.uid, item.consumo === "LOCAL" ? "LLEVAR" : "LOCAL")}>{item.consumo === "LOCAL" ? "Pasar a llevar" : "Pasar a local"}</button>
-                  {puedeEditarOrdenActual && <button className="danger-mini" onClick={() => eliminarItem(item.uid)}>Eliminar</button>}
-                </div>
-              </div>
-            ))}
 
-            <div className="totals-box">
-              <div><span>Subtotal</span><b>{formatoCRC(totalesMesa.subtotal)}</b></div>
-              <div><span>10% Servicio</span><b>{formatoCRC(totalesMesa.servicio)}</b></div>
-              <div><span>Total pendiente</span><b>{formatoCRC(totalesMesa.total)}</b></div>
-            </div>
-
-            {puedeCobrar && cuentaSolicitada && (
-              <div className="pay-box">
-                {!cajaAbierta ? <button onClick={abrirCaja} className="primary">Abrir caja</button> : null}
-                <button onClick={toggleCuentaDividida}>{mesaSeleccionada.cuentaDividida ? "Desactivar cuenta dividida" : "Activar cuenta dividida"}</button>
-                {mesaSeleccionada.cuentaDividida && mesaSeleccionada.orden.map((item) => !item.pagado && (
-                  <label key={item.uid} className="pay-check"><input type="checkbox" checked={itemsPagoSeleccionados.includes(item.uid)} onChange={() => toggleItemPago(item.uid)} /> Cobrar {item.nombre}</label>
-                ))}
-                <select value={metodoPago} onChange={(e) => setMetodoPago(e.target.value as MetodoPago)}><option>Efectivo</option><option>Tarjeta</option><option>SINPE</option><option>Mixto</option></select>
-                {pagoUsaEfectivo && (
-                  <div className="cash-change-box">
-                    <input type="number" value={montoRecibido} onChange={(e) => setMontoRecibido(Number(e.target.value))} placeholder="Monto recibido" />
-                    <div className="cash-quick-buttons">
-                      {[5000, 10000, 20000].map((monto) => <button key={monto} type="button" onClick={() => setMontoRecibido(monto)}>{formatoCRC(monto)}</button>)}
-                    </div>
-                    <div className="change-summary">
-                      <span>Recibido: <b>{formatoCRC(montoRecibido)}</b></span>
-                      <span>Vuelto: <b>{formatoCRC(vueltoActual)}</b></span>
-                    </div>
+                  <div className="actions-row bottom-actions">
+                    {(esJefe || esAdmin || esMesero || esCaja) && !cuentaSolicitada && <button className="primary" onClick={enviarComanda}>Imprimir comanda</button>}
+                    {(esJefe || esAdmin || esMesero || esCaja) && !cuentaSolicitada && <button onClick={solicitarCuenta}>Solicitar cuenta</button>}
+                    {puedeCobrar && cuentaSolicitada && <button className="blue" onClick={cobrar} disabled={!itemsCobroActual.length || !cajaAbierta}>Cobrar / imprimir factura</button>}
                   </div>
-                )}
-                <h2>A cobrar: {formatoCRC(totalesCobro.total)}</h2>
+                </div>
               </div>
-            )}
-
-            <div className="actions-row bottom-actions">
-              {(esJefe || esAdmin || esMesero || esCaja) && !cuentaSolicitada && <button className="primary" onClick={enviarComanda}>Imprimir comanda</button>}
-              {(esJefe || esAdmin || esMesero || esCaja) && !cuentaSolicitada && <button onClick={solicitarCuenta}>Solicitar cuenta</button>}
-              {puedeCobrar && cuentaSolicitada && <button className="blue" onClick={cobrar} disabled={!itemsCobroActual.length || !cajaAbierta}>Cobrar / imprimir factura</button>}
             </div>
           </section>
         )}

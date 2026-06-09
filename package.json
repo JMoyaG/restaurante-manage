@@ -2,7 +2,9 @@
   "scripts": {
     "dev": "vite",
     "build": "node ./node_modules/typescript/bin/tsc -b && node ./node_modules/vite/bin/vite.js build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "print-service": "node print-service/server.cjs",
+    "dev:all": "echo Usá start-pos-con-impresora.bat para levantar POS + impresora"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
