@@ -2128,4 +2128,215 @@ textarea {
 .admin-products,
 .user-row {
   overflow-x: hidden;
+}/* === ORDEN PEGADA ABAJO: crece hacia arriba === */
+
+@media (min-width: 981px) {
+  .content {
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  .page.order-page {
+    height: calc(100vh - 112px);
+    max-height: calc(100vh - 112px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding-top: 12px;
+    padding-bottom: 10px;
+  }
+
+  .page.order-page > button {
+    flex: 0 0 auto;
+    width: fit-content;
+  }
+
+  .order-head {
+    flex: 0 0 auto;
+    margin: 8px 0 10px;
+  }
+
+  .pos-order-workspace {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex !important;
+    flex-direction: column;
+    overflow: hidden;
+    gap: 10px;
+  }
+
+  .pos-products-panel {
+    flex: 0 0 auto;
+    max-height: 150px;
+    overflow: hidden;
+  }
+
+  .category-card-tabs {
+    margin-bottom: 7px;
+  }
+
+  .product-card-grid-pos {
+    max-height: 82px;
+    overflow-y: auto;
+  }
+
+  .pos-order-panel {
+    margin-top: auto;
+    flex: 0 0 auto;
+    width: 100%;
+    max-height: 62vh;
+    min-height: unset !important;
+    height: auto !important;
+    display: flex !important;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 8px;
+  }
+
+  .pos-order-panel .order-list-panel {
+    flex: 0 1 auto;
+    min-height: 0;
+    max-height: calc(62vh - 96px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 4px;
+  }
+
+  .order-list-title {
+    flex: 0 0 auto;
+    padding-bottom: 6px;
+    margin-bottom: 4px;
+  }
+
+  .order-items-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .tile-order-item {
+    min-height: 82px;
+    padding: 8px;
+  }
+
+  .tile-order-title h3 {
+    font-size: 15px;
+  }
+
+  .tile-order-title p {
+    font-size: 10px;
+    -webkit-line-clamp: 1;
+  }
+
+  .tile-order-actions {
+    gap: 4px;
+  }
+
+  .pos-bottom-fixed {
+    flex: 0 0 auto;
+    margin-top: 8px;
+    padding-top: 6px;
+    background: #f5ead3;
+    border-top: 1px solid rgba(90, 56, 26, .14);
+    position: relative;
+    z-index: 5;
+  }
+
+  .pos-bottom-fixed .totals-box {
+    margin: 0 0 6px;
+    gap: 7px;
+  }
+
+  .pos-bottom-fixed .totals-box div {
+    padding: 8px 10px;
+    border-radius: 10px;
+  }
+
+  .pos-bottom-fixed .totals-box b {
+    font-size: 16px;
+  }
+
+  .pos-bottom-fixed .bottom-actions {
+    margin-top: 0;
+  }
+
+  .pos-bottom-fixed .bottom-actions button {
+    padding: 8px 10px;
+    border-radius: 9px;
+  }
+}
+/* === FIX EDITAR ORDEN: que no se corte dentro del panel inferior === */
+@media (min-width: 981px) {
+  .inline-edit-details[open] {
+    position: static;
+  }
+
+  .inline-edit-details[open] .inline-edit-body {
+    position: fixed !important;
+    left: calc(285px + 38px);
+    right: 38px;
+    bottom: 118px;
+    top: auto !important;
+    width: auto !important;
+    max-height: 42vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    z-index: 9999;
+    padding: 14px;
+    background: #fffdf8;
+    border: 2px solid #0b6c2e;
+    border-radius: 16px;
+    box-shadow: 0 24px 70px rgba(20, 12, 5, .35);
+  }
+
+  .inline-edit-details[open] .inline-edit-body textarea {
+    width: 100%;
+    min-height: 56px;
+    margin-bottom: 10px;
+  }
+
+  .inline-edit-details[open] .compact-mod-grid {
+    grid-template-columns: repeat(4, minmax(120px, 1fr));
+    gap: 8px;
+  }
+
+  .inline-edit-details[open] .compact-mod-grid label {
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+}
+
+@media (max-width: 980px) {
+  .inline-edit-details[open] .inline-edit-body {
+    position: static !important;
+    width: 100% !important;
+    max-height: none;
+    margin-top: 8px;
+    box-shadow: none;
+  }
+}
+/* Botón para ocultar panel de editar producto */
+.edit-panel-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.edit-panel-top b {
+  color: #0b6c2e;
+  font-size: 15px;
+}
+
+.edit-close-button {
+  padding: 7px 12px !important;
+  border-radius: 10px !important;
+  white-space: nowrap;
+}
+
+.inline-edit-details[open] summary {
+  background: #0b6c2e;
+  color: white;
 }

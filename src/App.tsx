@@ -1070,7 +1070,20 @@ export default function App() {
             ))}
           </div>
 
-         
+          <div className="qr-order-box">
+            <h2>Tu pedido</h2>
+            {ordenQR.length === 0 ? <p>Tocá los productos del menú para agregarlos.</p> : null}
+            {ordenQR.map((item) => (
+              <div key={item.uid} className="qr-order-line">
+                <span>{item.nombre}</span>
+                <b>{formatoCRC(precioLinea(item))}</b>
+                <button onClick={() => setOrdenQR((prev) => prev.filter((p) => p.uid !== item.uid))}>×</button>
+              </div>
+            ))}
+            <textarea value={notaQR} onChange={(e) => setNotaQR(e.target.value)} placeholder="Notas para cocina" />
+            <h3>{formatoCRC(totalQR)}</h3>
+            <button onClick={enviarPedidoQR}>Enviar pedido</button>
+          </div>
 
           <div className="menu-footer">🌵 🌶️ 🪅 🌮 🌵<h2>¡Buen provecho!</h2></div>
         </div>
@@ -1095,7 +1108,7 @@ export default function App() {
           />
           {errorLogin && <strong className="error-login">{errorLogin}</strong>}
           <button onClick={iniciarSesion}>Entrar</button>
-          
+          <small>Usuarios: jefe, admin, caja, caja_mesero, mesero · clave 1234</small>
         </div>
       </div>
     );
@@ -1275,8 +1288,22 @@ export default function App() {
                             <details className="modifier-details inline-edit-details">
                               <summary>{puedeEditarOrdenActual ? "▶ Editar" : "▶ Detalle"}</summary>
                               <div className="modifier-body inline-edit-body">
-                                <textarea disabled={!puedeEditarOrdenActual} value={item.nota} onChange={(e) => actualizarItem(item.uid, { nota: e.target.value })} placeholder="Nota para cocina" />
-                                {puedeEditarOrdenActual ? (
+  <div className="edit-panel-top">
+    <b>Modificar {item.nombre}</b>
+    <button
+      type="button"
+      className="danger-mini edit-close-button"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.currentTarget.closest("details")?.removeAttribute("open");
+      }}
+    >
+      Ocultar
+    </button>
+  </div>
+
+  <textarea disabled={!puedeEditarOrdenActual} value={item.nota} onChange={(e) => actualizarItem(item.uid, { nota: e.target.value })} placeholder="Nota para cocina" />{puedeEditarOrdenActual ? (
                                   <div className="mod-grid compact-mod-grid">
                                     {item.ingredientes.map((ingrediente) => (
                                       <label key={ingrediente}><input type="checkbox" checked={item.sinIngredientes.includes(ingrediente)} onChange={() => toggleIngrediente(item, ingrediente)} /> Sin {ingrediente}</label>
