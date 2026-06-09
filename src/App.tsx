@@ -1046,7 +1046,7 @@ export default function App() {
             <div className="skull">💀</div>
             <h1 className="menu-title">SPECIAL MENU</h1>
             <div className="sombrero">🌮</div>
-            <p>ANTOJITOS MEXICANOS · MESA {mesaQR}</p>
+            <p>Gato Calabera · MESA {mesaQR}</p>
             <span className="menu-label">MENÚ</span>
           </div>
 
