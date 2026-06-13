@@ -1,0 +1,10 @@
+Abrir en Chrome:
+http://127.0.0.1:5055/health
+http://127.0.0.1:5055/test-print
+
+Tarea programada:
+GatoCalaveraPrintService
+
+Si falla:
+1. Ejecutar REPARAR-ARRANQUE-V5.cmd como administrador.
+2. Ejecutar VER-ESTADO-Y-LOGS.bat y copiar la salida.

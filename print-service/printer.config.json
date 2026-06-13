@@ -1,7 +1,6 @@
 {
   "servicePort": 5055,
-  "printerIp": "192.168.1.7",
-  "printerPort": 9100,
-  "windowsPrinterNameMatch": "ZKP8012|ZKP|Zjiang|Thermal|Receipt|80",
-  "preferLan": true
+  "windowsPrinterName": "TERMICA",
+  "windowsPrinterNameMatch": "TERMICA|POS-80|Thermal|Receipt|80",
+  "preferLan": false
 }

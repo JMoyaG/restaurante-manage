@@ -1,0 +1,45 @@
+GATO CALAVERA - POS VERCEL + IMPRESION LOCAL
+
+Objetivo:
+- El POS puede estar publicado en Vercel.
+- La impresora térmica NO imprime desde Vercel directamente.
+- La computadora del restaurante instala una sola vez el servicio local.
+- Luego el cliente prende la compu, abre Chrome, entra al POS de Vercel y trabaja normal.
+
+PASO A PASO EN LA COMPUTADORA DEL RESTAURANTE:
+
+1) Instalar/conectar la impresora térmica en Windows.
+   Debe quedar como impresora llamada:
+   TERMICA
+
+2) Ejecutar como administrador:
+   INSTALADOR-IMPRESION-LOCAL-GATO-CALAVERA.cmd
+
+3) Validar en Chrome:
+   http://127.0.0.1:5055/health
+
+4) Probar impresión:
+   http://127.0.0.1:5055/test-print
+
+5) Reiniciar la computadora y probar de nuevo el paso 3 y 4.
+   Si imprime después del reinicio, ya quedó listo.
+
+EN VERCEL:
+- La app usa por defecto:
+  http://127.0.0.1:5055
+- Variable opcional:
+  VITE_PRINT_SERVER_URL=http://127.0.0.1:5055
+
+RUTAS QUE USA EL POS:
+- GET  /health
+- GET  /test-print
+- POST /print/factura
+- POST /print/comanda
+- POST /print/cierre
+- POST /print  (respaldo con texto directo)
+
+Si la app marca impresora off:
+- Revisar que Chrome abra http://127.0.0.1:5055/health
+- Revisar que la impresora esté encendida
+- Revisar que Windows tenga la impresora llamada TERMICA
+- Ejecutar de nuevo el instalador como administrador

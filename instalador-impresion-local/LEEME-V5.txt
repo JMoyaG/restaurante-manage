@@ -1,0 +1,17 @@
+GATO CALAVERA - INSTALADOR IMPRESION LOCAL V5
+
+USO:
+1. Extraiga TODO el ZIP en una carpeta.
+2. Ejecute INSTALADOR-UNICO-GATO-CALAVERA-V5.cmd como administrador.
+3. Al terminar, pruebe en Chrome:
+   http://127.0.0.1:5055/health
+   http://127.0.0.1:5055/test-print
+
+REQUISITO:
+- La impresora debe estar instalada en Windows como TERMICA.
+- Si no existe TERMICA, el instalador intenta crearla en un puerto USB detectado.
+
+El servicio queda como tarea de Windows:
+GatoCalaveraPrintService
+
+No queda ventana abierta. Arranca cada vez que el usuario inicia sesion en Windows.

@@ -40,6 +40,15 @@ textarea { min-height: 70px; resize: vertical; }
 .pill { padding: 12px 18px; border-radius: 999px; background: #ead0ab; font-weight: 900; }
 .pill.ok { background: #0b6c2e; color: white; }
 .pill.warn { background: #efd2ad; color: #5a3418; }
+
+.printer-pill {
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+}
+.printer-pill:hover {
+  filter: brightness(0.96);
+}
 .page { padding: 30px 38px; }
 .hero-card { background: linear-gradient(95deg, #173d29 0%, #53614c 100%); color: white; border-radius: 24px; padding: 58px 45px; box-shadow: 0 20px 40px rgba(23, 61, 41, .18); margin-bottom: 24px; }
 .hero-card h1 { font-family: Georgia, serif; font-size: 54px; margin: 0 0 10px; }

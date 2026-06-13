@@ -1,211 +1,199 @@
 const http = require('http');
 const fs = require('fs');
 const os = require('os');
-const net = require('net');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFile } = require('child_process');
 
 const CONFIG_PATH = path.join(__dirname, 'printer.config.json');
+const WIDTH = 42;
 
 function readConfig() {
   const defaults = {
     servicePort: 5055,
-    printerIp: '192.168.1.7',
-    printerPort: 9100,
-    windowsPrinterNameMatch: 'ZKP8012|ZKP|Zjiang|Thermal|Receipt|80',
-    preferLan: true,
+    windowsPrinterName: 'TERMICA',
+    windowsPrinterNameMatch: 'TERMICA|POS-80|Thermal|Receipt|80',
   };
   try {
     if (!fs.existsSync(CONFIG_PATH)) return defaults;
     return { ...defaults, ...JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')) };
-  } catch (error) {
-    console.log('No se pudo leer printer.config.json, usando valores por defecto:', error.message || error);
+  } catch {
     return defaults;
   }
 }
 
 const CONFIG = readConfig();
 const PORT = Number(process.env.GATO_PRINT_PORT || CONFIG.servicePort || 5055);
-const PRINTER_IP = process.env.ZKP_PRINTER_IP || CONFIG.printerIp || '192.168.1.7';
-const PRINTER_PORT = Number(process.env.ZKP_PRINTER_PORT || CONFIG.printerPort || 9100);
-const MATCH = process.env.ZKP_PRINTER_NAME || CONFIG.windowsPrinterNameMatch || 'ZKP8012|ZKP|Zjiang|Thermal|Receipt|80';
-const PREFER_LAN = String(process.env.ZKP_PREFER_LAN || CONFIG.preferLan || 'true').toLowerCase() !== 'false';
+const PRINTER_NAME = process.env.GATO_PRINTER_NAME || CONFIG.windowsPrinterName || 'TERMICA';
+const MATCH = process.env.GATO_PRINTER_MATCH || CONFIG.windowsPrinterNameMatch || 'TERMICA|POS-80|Thermal|Receipt|80';
 
-function send(res, status, data) {
+function clean(text = '') {
+  return String(text || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/₡/g, 'CRC ')
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/[—–]/g, '-')
+    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '')
+    .replace(/\r?\n/g, '\r\n');
+}
+
+function money(n) {
+  return 'CRC ' + Number(n || 0).toLocaleString('es-CR');
+}
+function line() { return '-'.repeat(WIDTH) + '\n'; }
+function center(text) {
+  const t = clean(text).slice(0, WIDTH);
+  return ' '.repeat(Math.max(0, Math.floor((WIDTH - t.length) / 2))) + t + '\n';
+}
+function col(left, right = '') {
+  let l = clean(left).slice(0, 24);
+  let r = clean(right).slice(0, 17);
+  const spaces = Math.max(1, WIDTH - l.length - r.length);
+  return l + ' '.repeat(spaces) + r + '\n';
+}
+function fecha() {
+  return new Date().toLocaleString('es-CR', { dateStyle: 'short', timeStyle: 'short' });
+}
+function productos(data) {
+  const p = data?.productos;
+  if (!p) return [];
+  return Array.isArray(p) ? p : [p];
+}
+function buildFactura(data = {}) {
+  if (data.texto || data.text) return String(data.texto || data.text) + '\n\n\n';
+  let t = '\n' + center('GATO CALAVERA') + center('FACTURA') + line();
+  t += col('Mesa', data.mesa || 'N/A') + col('Fecha', fecha()) + line();
+  for (const p of productos(data)) {
+    const nombre = clean(p.nombre || 'Producto').slice(0, 32);
+    const cantidad = Number(p.cantidad || 1);
+    const precio = Number(p.precio || 0);
+    t += `${cantidad} x ${nombre}\n`;
+    t += col('  Precio', money(precio));
+    t += col('  Subtotal', money(cantidad * precio)) + '\n';
+  }
+  t += line() + col('TOTAL', money(data.total));
+  if (data.efectivo !== undefined) t += col('Efectivo', money(data.efectivo));
+  if (data.vuelto !== undefined) t += col('Vuelto', money(data.vuelto));
+  t += line() + center('Gracias por su compra') + '\n\n\n';
+  return t;
+}
+function buildComanda(data = {}) {
+  if (data.texto || data.text) return String(data.texto || data.text) + '\n\n\n';
+  let t = '\n' + center('GATO CALAVERA') + center('COMANDA') + line();
+  t += col('Mesa', data.mesa || 'N/A') + col('Fecha', fecha()) + line();
+  for (const p of productos(data)) {
+    t += `${Number(p.cantidad || 1)} x ${clean(p.nombre || 'Producto').slice(0, 36)}\n`;
+    if (p.notas) t += `Nota: ${clean(p.notas).slice(0, 36)}\n`;
+    if (p.llevar) t += 'PARA LLEVAR\n';
+    t += '\n';
+  }
+  return t + line() + '\n\n\n';
+}
+function buildCierre(data = {}) {
+  if (data.texto || data.text) return String(data.texto || data.text) + '\n\n\n';
+  let t = '\n' + center('GATO CALAVERA') + center('CIERRE DE CAJA') + line();
+  t += col('Fecha', fecha());
+  if (data.usuario) t += col('Usuario', data.usuario);
+  if (data.montoInicial !== undefined) t += col('Inicial', money(data.montoInicial));
+  if (data.efectivo !== undefined) t += col('Efectivo', money(data.efectivo));
+  if (data.tarjeta !== undefined) t += col('Tarjeta', money(data.tarjeta));
+  if (data.sinpe !== undefined) t += col('SINPE', money(data.sinpe));
+  if (data.salidas !== undefined) t += col('Salidas', money(data.salidas));
+  if (data.total !== undefined) t += col('TOTAL', money(data.total));
+  return t + line() + '\n\n\n';
+}
+function testText() {
+  return '\n' + center('GATO CALAVERA') + center('PRUEBA DE IMPRESION') + line() + col('Impresora', PRINTER_NAME) + col('Estado', 'OK') + col('Fecha', fecha()) + line() + center('SERVICIO LOCAL OK') + '\n\n\n';
+}
+
+function ps(command) {
+  return new Promise((resolve, reject) => {
+    execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command], { windowsHide: true, timeout: 15000 }, (err, stdout, stderr) => {
+      if (err) reject(new Error(stderr || err.message));
+      else resolve(stdout);
+    });
+  });
+}
+async function printerExists() {
+  if (process.platform !== 'win32') return false;
+  try {
+    await ps(`Get-Printer -Name ${JSON.stringify(PRINTER_NAME)} -ErrorAction Stop | Out-Null`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function printText(text) {
+  if (process.platform !== 'win32') throw new Error('Este servicio local imprime solo en Windows.');
+  const tmp = path.join(os.tmpdir(), `gato-ticket-${Date.now()}.txt`);
+  fs.writeFileSync(tmp, clean(text), 'ascii');
+  const cmd = `Get-Content -Raw ${JSON.stringify(tmp)} | Out-Printer -Name ${JSON.stringify(PRINTER_NAME)}; Remove-Item ${JSON.stringify(tmp)} -Force -ErrorAction SilentlyContinue`;
+  await ps(cmd);
+}
+function send(res, status, obj) {
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
   });
-  res.end(JSON.stringify(data));
+  res.end(JSON.stringify(obj, null, 2));
 }
-
-function ps(args) {
-  return execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', ...args], {
-    encoding: 'utf8',
-    windowsHide: true,
-    timeout: 15000,
-  });
-}
-
-function listPrinters() {
-  if (process.platform !== 'win32') return [];
-  const cmd = 'Get-CimInstance Win32_Printer | Select-Object Name,Default,WorkOffline,PrinterStatus | ConvertTo-Json -Compress';
-  const out = ps(['-Command', cmd]).trim();
-  if (!out) return [];
-  const parsed = JSON.parse(out);
-  return Array.isArray(parsed) ? parsed : [parsed];
-}
-
-function pickPrinter() {
-  const printers = listPrinters();
-  const rx = new RegExp(MATCH, 'i');
-  return printers.find((p) => rx.test(p.Name || '')) || printers.find((p) => p.Default) || printers[0] || null;
-}
-
-function normalizeText(text = '') {
-  return String(text)
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/₡/g, 'CRC ')
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
-    .replace(/—/g, '-')
-    .replace(/–/g, '-')
-    .replace(/•/g, '-')
-    .replace(/[^	
-\x20-\x7E]/g, '')
-    .replace(/\n/g, '\r\n');
-}
-
-function makeEscpos(text) {
-  const init = Buffer.from([0x1b, 0x40]); // init
-  const codePage = Buffer.from([0x1b, 0x74, 0x00]); // code page 0, safe ASCII
-  const left = Buffer.from([0x1b, 0x61, 0x00]);
-  const body = Buffer.from(normalizeText(text), 'ascii');
-  const feedCut = Buffer.from([0x0a, 0x0a, 0x0a, 0x1d, 0x56, 0x42, 0x00]); // feed + partial cut
-  return Buffer.concat([init, codePage, left, body, feedCut]);
-}
-
-function printLan(text) {
+function readBody(req) {
   return new Promise((resolve, reject) => {
-    const data = makeEscpos(text);
-    const socket = new net.Socket();
-    let finished = false;
-
-    const done = (error) => {
-      if (finished) return;
-      finished = true;
-      socket.destroy();
-      if (error) reject(error);
-      else resolve();
-    };
-
-    socket.setTimeout(8000);
-    socket.once('timeout', () => done(new Error(`Timeout conectando a ${PRINTER_IP}:${PRINTER_PORT}`)));
-    socket.once('error', (error) => done(error));
-    socket.connect(PRINTER_PORT, PRINTER_IP, () => {
-      socket.write(data, (error) => {
-        if (error) return done(error);
-        socket.end();
-      });
-    });
-    socket.once('close', () => done());
-  });
-}
-
-function rawPrintWindows(printerName, text) {
-  if (process.platform !== 'win32') throw new Error('Impresion Windows solo disponible en Windows.');
-  const tmp = path.join(os.tmpdir(), `gato-calavera-ticket-${Date.now()}.bin`);
-  fs.writeFileSync(tmp, makeEscpos(text));
-  const script = path.join(__dirname, 'raw-print.ps1');
-  try {
-    ps(['-File', script, printerName, tmp]);
-  } finally {
-    setTimeout(() => fs.existsSync(tmp) && fs.unlinkSync(tmp), 1500).unref();
-  }
-}
-
-async function printTicket(text) {
-  if (PREFER_LAN && PRINTER_IP) {
-    await printLan(text);
-    return { mode: 'LAN', printer: `${PRINTER_IP}:${PRINTER_PORT}` };
-  }
-  const printer = pickPrinter();
-  if (!printer?.Name) throw new Error('No se encontro impresora ZKP8012/Thermal/Receipt instalada en Windows.');
-  rawPrintWindows(printer.Name, text);
-  return { mode: 'WINDOWS_RAW', printer: printer.Name };
-}
-
-const testText = () => [
-  'GATO CALAVERA PACAYAS',
-  'PRUEBA IMPRESORA LAN',
-  `IP: ${PRINTER_IP}`,
-  `PUERTO: ${PRINTER_PORT}`,
-  'MODELO: ZKP8012 80MM',
-  'ESC/POS OK',
-  '',
-  new Date().toLocaleString('es-CR'),
-  '',
-].join('\n');
-
-const server = http.createServer((req, res) => {
-  if (req.method === 'OPTIONS') return send(res, 200, { ok: true });
-
-  if (req.method === 'GET' && req.url === '/status') {
-    return send(res, 200, {
-      ok: true,
-      service: 'GatoCalaveraPrintService',
-      preferLan: PREFER_LAN,
-      printerIp: PRINTER_IP,
-      printerPort: PRINTER_PORT,
-      windowsNameMatch: MATCH,
-    });
-  }
-
-  if (req.method === 'GET' && req.url === '/printers') {
-    try {
-      return send(res, 200, { ok: true, printers: listPrinters(), selected: pickPrinter(), match: MATCH });
-    } catch (error) {
-      return send(res, 500, { ok: false, error: String(error.message || error) });
-    }
-  }
-
-  if (req.method === 'GET' && req.url === '/test-print') {
-    printTicket(testText())
-      .then((result) => send(res, 200, { ok: true, ...result }))
-      .catch((error) => send(res, 500, { ok: false, error: String(error.message || error), printerIp: PRINTER_IP, printerPort: PRINTER_PORT }));
-    return;
-  }
-
-  if (req.method === 'POST' && req.url === '/print') {
     let body = '';
     req.on('data', (chunk) => {
       body += chunk;
-      if (body.length > 1024 * 1024) req.destroy();
+      if (body.length > 1024 * 1024) reject(new Error('Payload muy grande'));
     });
     req.on('end', () => {
-      try {
-        const payload = JSON.parse(body || '{}');
-        const texto = payload.texto || payload.text || '';
-        if (!texto.trim()) return send(res, 400, { ok: false, error: 'Texto vacio para imprimir.' });
-        printTicket(texto)
-          .then((result) => send(res, 200, { ok: true, ...result }))
-          .catch((error) => send(res, 500, { ok: false, error: String(error.message || error), printerIp: PRINTER_IP, printerPort: PRINTER_PORT }));
-      } catch (error) {
-        return send(res, 500, { ok: false, error: String(error.message || error) });
-      }
+      try { resolve(body ? JSON.parse(body) : {}); }
+      catch { reject(new Error('JSON invalido')); }
     });
-    return;
-  }
+    req.on('error', reject);
+  });
+}
 
-  return send(res, 404, { ok: false, error: 'Ruta no encontrada' });
+const server = http.createServer(async (req, res) => {
+  try {
+    if (req.method === 'OPTIONS') return send(res, 200, { ok: true });
+    const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
+    const pathName = url.pathname.toLowerCase();
+
+    if (req.method === 'GET' && (pathName === '/health' || pathName === '/status')) {
+      return send(res, 200, { ok: true, port: PORT, service: 'GatoCalaveraPrintService', printer: PRINTER_NAME, printerFound: await printerExists(), message: 'Servicio local Gato Calavera activo' });
+    }
+    if (req.method === 'GET' && (pathName === '/test-print' || pathName === '/print/test')) {
+      await printText(testText());
+      return send(res, 200, { ok: true, message: 'Prueba enviada', printer: PRINTER_NAME });
+    }
+    if (req.method === 'POST' && pathName === '/print') {
+      const data = await readBody(req);
+      const texto = data.texto || data.text;
+      if (!texto) throw new Error('Texto vacio para imprimir.');
+      await printText(String(texto));
+      return send(res, 200, { ok: true, message: 'Ticket enviado', printer: PRINTER_NAME });
+    }
+    if (req.method === 'POST' && pathName === '/print/factura') {
+      await printText(buildFactura(await readBody(req)));
+      return send(res, 200, { ok: true, message: 'Factura enviada', printer: PRINTER_NAME });
+    }
+    if (req.method === 'POST' && pathName === '/print/comanda') {
+      await printText(buildComanda(await readBody(req)));
+      return send(res, 200, { ok: true, message: 'Comanda enviada', printer: PRINTER_NAME });
+    }
+    if (req.method === 'POST' && pathName === '/print/cierre') {
+      await printText(buildCierre(await readBody(req)));
+      return send(res, 200, { ok: true, message: 'Cierre enviado', printer: PRINTER_NAME });
+    }
+    return send(res, 404, { ok: false, error: 'Ruta no encontrada' });
+  } catch (error) {
+    return send(res, 500, { ok: false, error: String(error.message || error) });
+  }
 });
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`GatoCalaveraPrintService listo en http://127.0.0.1:${PORT}`);
-  console.log(`Modo preferido: ${PREFER_LAN ? 'LAN TCP/IP' : 'Windows RAW'}`);
-  console.log(`Impresora LAN: ${PRINTER_IP}:${PRINTER_PORT}`);
-  console.log('Prueba: http://127.0.0.1:5055/test-print');
+  console.log(`Impresora Windows: ${PRINTER_NAME}`);
 });
