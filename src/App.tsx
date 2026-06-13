@@ -220,9 +220,11 @@ const precioLinea = (item: ItemOrden) =>
 
 const calcularTotales = (items: ItemOrden[]) => {
   const subtotal = items.reduce((acc, item) => acc + precioLinea(item), 0);
-  const baseServicio = 0;
-  const servicio = 0;
-  return { subtotal, servicio, total: subtotal, baseServicio };
+  const baseServicio = items
+    .filter((item) => item.consumo === "LOCAL")
+    .reduce((acc, item) => acc + precioLinea(item), 0);
+  const servicio = Math.round(baseServicio * 0.1);
+  return { subtotal, servicio, total: subtotal + servicio, baseServicio };
 };
 
 const crearItem = (producto: Producto, consumo: TipoConsumo): ItemOrden => ({
@@ -1030,7 +1032,7 @@ export default function App() {
       const total = formatoNumeroTicket(precioLinea(item));
       add(lineaTicket(nombre, total));
       if (item.cantidad > 1) add(`  ${item.cantidad} x ${formatoNumeroTicket(item.precio + item.extras.reduce((acc, extra) => acc + extra.precio, 0))}`);
-      if (item.consumo === "LLEVAR") add("  PARA LLEVAR");
+      // En factura no se imprime PARA LLEVAR para mantener el ticket limpio.
       if (item.sinIngredientes.length) add(`  SIN: ${recortarTicket(item.sinIngredientes.join(", "), 34)}`);
       if (item.extras.length) add(`  EXTRA: ${recortarTicket(item.extras.map((e) => e.nombre).join(", "), 32)}`);
       if (item.nota.trim()) add(`  NOTA: ${recortarTicket(item.nota.trim(), 33)}`);
@@ -1419,10 +1421,10 @@ export default function App() {
         {vista === "mesas" && puedeUsarMesas && mesaSeleccionada && (
           <section className="page order-page no-print">
             <button onClick={() => setMesaId(null)}>← Volver</button>
-            <div className="order-head order-head-simple">
+            <div className="order-head">
               <div>
                 <h1>{mesaSeleccionada.nombre}</h1>
-                <div className="quick-order-fields simple-client-field">
+                <div className="quick-order-fields">
                   <label>Cliente
                     <input
                       value={mesaSeleccionada.cliente}
@@ -1430,11 +1432,25 @@ export default function App() {
                       placeholder="Nombre del cliente"
                     />
                   </label>
+                  <label>Personas
+                    <input
+                      type="number"
+                      min={1}
+                      value={mesaSeleccionada.invitados}
+                      onChange={(e) => actualizarMesa({ ...mesaSeleccionada, invitados: Number(e.target.value) || 1 })}
+                    />
+                  </label>
                 </div>
+                <p>Tipo: <b>{mesaSeleccionada.tipoOrden}</b> · Apertura: {mesaSeleccionada.fechaApertura || "No registrada"}</p>
+              </div>
+              <div className="actions-row">
+                <button className={mesaSeleccionada.tipoOrden === "LOCAL" ? "active" : ""} disabled={!puedeMarcarLlevarOrden} onClick={() => cambiarConsumoOrden("LOCAL")}>Local +10%</button>
+                <button className={mesaSeleccionada.tipoOrden === "LLEVAR" ? "active" : ""} disabled={!puedeMarcarLlevarOrden} onClick={() => cambiarConsumoOrden("LLEVAR")}>Llevar sin 10%</button>
               </div>
             </div>
 
-            
+            {tieneItemsImpresos && <div className="alert">Productos impresos quedan marcados como IMPRESO. No se eliminan ni se cambia cantidad/detalle, pero sí podés marcar Local/Llevar antes de cobrar.</div>}
+
             <div className="pos-order-workspace">
               {puedeEditarOrdenActual && (
                 <div className="pos-products-panel">
@@ -1575,6 +1591,7 @@ export default function App() {
                 <div className="pos-bottom-fixed">
                   <div className="totals-box">
                     <div><span>Subtotal</span><b>{formatoCRC(totalesMesa.subtotal)}</b></div>
+                    <div><span>10% Servicio</span><b>{formatoCRC(totalesMesa.servicio)}</b></div>
                     <div><span>Total pendiente</span><b>{formatoCRC(totalesMesa.total)}</b></div>
                   </div>
 
@@ -1991,7 +2008,7 @@ function VentaDetalleRow({ venta }: { venta: Venta }) {
       {venta.items.map((item) => (
         <p key={item.uid}>{item.cantidad}x {item.nombre} · {item.consumo} · {formatoCRC(precioLinea(item))}</p>
       ))}
-      <small>Subtotal {formatoCRC(venta.subtotal)} · Total {formatoCRC(venta.total)}</small>
+      <small>Subtotal {formatoCRC(venta.subtotal)} · Servicio {formatoCRC(venta.servicio)} · Total {formatoCRC(venta.total)}</small>
     </div>
   );
 }
@@ -2110,7 +2127,7 @@ function TicketPrint({ ticket }: { ticket: Ticket | null }) {
       {venta.items.map((item) => (
         <div key={item.uid} className="fact-line">
           <span>{item.cantidad > 1 ? `${item.cantidad}x ` : ""}{item.nombre}</span><b>{formatoCRC(precioLinea(item))}</b>
-          {item.consumo === "LLEVAR" && <small>Para llevar</small>}
+          {item.consumo === "LLEVAR" && <small>Para llevar · sin 10% servicio</small>}
           {item.sinIngredientes.length > 0 && <small>SIN: {item.sinIngredientes.join(", ")}</small>}
           {item.extras.length > 0 && <small>EXTRAS: {item.extras.map((e) => `${e.nombre} ${formatoCRC(e.precio)}`).join(", ")}</small>}
           {item.nota && <small>Nota: {item.nota}</small>}
@@ -2118,6 +2135,7 @@ function TicketPrint({ ticket }: { ticket: Ticket | null }) {
       ))}
       <hr />
       <p className="total-line"><span>SubTotal:</span><b>{formatoCRC(venta.subtotal)}</b></p>
+      {venta.servicio > 0 && <p className="total-line"><span>10% Servicio:</span><b>{formatoCRC(venta.servicio)}</b></p>}
       <p className="total-line"><span>Total:</span><b>{formatoCRC(venta.total)}</b></p>
       {(venta.metodoPago === "Efectivo" || venta.metodoPago === "Mixto") && (
         <>

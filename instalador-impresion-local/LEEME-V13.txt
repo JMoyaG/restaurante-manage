@@ -1,0 +1,14 @@
+GATO CALAVERA - INSTALADOR IMPRESION LOCAL V13
+
+V13 cambia el motor a RAW ESC/POS para que la factura mantenga el logo y formato térmico, y la comanda resalte cantidad y producto en tamaño más grande y en negrita.
+
+Instalación:
+1. Extraer TODO el ZIP.
+2. Clic derecho sobre INSTALADOR-UNICO-GATO-CALAVERA-V13.cmd.
+3. Ejecutar como administrador.
+4. Validar http://127.0.0.1:5055/health
+5. Probar http://127.0.0.1:5055/test-print
+
+La impresora debe llamarse TERMICA.
+
+V13 aumenta el logo de factura para que el texto Gato Calavera sea mas legible, manteniendo el formato de V10/V12.

@@ -131,6 +131,71 @@ async function printText(text) {
   const cmd = `Get-Content -Raw ${JSON.stringify(tmp)} | Out-Printer -Name ${JSON.stringify(PRINTER_NAME)}; Remove-Item ${JSON.stringify(tmp)} -Force -ErrorAction SilentlyContinue`;
   await ps(cmd);
 }
+async function printRawBytes(bytes) {
+  if (process.platform !== 'win32') throw new Error('Este servicio local imprime solo en Windows.');
+  const tmp = path.join(os.tmpdir(), `gato-ticket-${Date.now()}.bin`);
+  fs.writeFileSync(tmp, Buffer.from(bytes));
+  const script = path.join(__dirname, 'raw-print.ps1');
+  return new Promise((resolve, reject) => {
+    execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-PrinterName', PRINTER_NAME, '-FilePath', tmp], { windowsHide: true, timeout: 15000 }, (err, stdout, stderr) => {
+      try { fs.unlinkSync(tmp); } catch {}
+      if (err) reject(new Error(stderr || err.message));
+      else resolve(stdout);
+    });
+  });
+}
+function esc(...arr) { return arr; }
+function buildComandaRaw(data = {}) {
+  const items = productos(data);
+  const out = [];
+  const pushText = (s = '') => out.push(...Buffer.from(clean(s), 'ascii'));
+  const addItem = (cantidad, nombre) => {
+    const qty = String(cantidad || 1);
+    const prefix = (qty + ' ').padEnd(4, ' ');
+    const maxChars = 32;
+    const available = Math.max(8, maxChars - prefix.length);
+    const words = clean(nombre || 'Producto').toUpperCase().split(/\s+/).filter(Boolean);
+    const lines = [];
+    let current = '';
+    for (const word of words) {
+      if (!current) current = word;
+      else if ((current + ' ' + word).length <= available) current += ' ' + word;
+      else { lines.push(current); current = word; }
+    }
+    if (current) lines.push(current);
+    if (!lines.length) lines.push(clean(nombre || 'Producto').toUpperCase());
+    out.push(...esc(0x1B, 0x45, 0x01));
+    out.push(...esc(0x1D, 0x21, 0x01));
+    lines.forEach((line, idx) => pushText(`${idx === 0 ? prefix : ' '.repeat(prefix.length)}${line}\n`));
+    out.push(...esc(0x1D, 0x21, 0x00));
+    out.push(...esc(0x1B, 0x45, 0x00));
+  };
+  out.push(...esc(0x1B, 0x40));
+  out.push(...esc(0x1B, 0x74, 0x02));
+  out.push(...esc(0x1B, 0x61, 0x01));
+  pushText('COMANDA\n\n');
+  pushText(new Date().toLocaleDateString('es-CR') + '\n\n');
+  if (data.mesa) pushText(`${clean(data.mesa)}\n`);
+  out.push(...esc(0x1B, 0x61, 0x00));
+  pushText(`\nA nombre de: ${clean(data.cliente || 'Cliente contado')}\n`);
+  pushText(`Salonero: ${clean(data.usuario || 'Caja')}\n`);
+  pushText(`Hora comanda: ${new Date().toLocaleTimeString('es-CR')}\n`);
+  pushText(`Mesa: ${clean(data.mesa || 'N/A')}\n`);
+  pushText('Pacayas\n\n');
+  pushText(line());
+  pushText('Cant. Descripcion\n');
+  pushText(line());
+  for (const p of items) {
+    addItem(p.cantidad, p.nombre);
+    if (p.notas) pushText(`  Nota: ${clean(p.notas)}\n`);
+    if (p.llevar) pushText('  PARA LLEVAR\n');
+    pushText(line());
+  }
+  out.push(...esc(0x1B, 0x61, 0x01));
+  pushText('******ULTIMA LINEA******\n\n\n');
+  out.push(...esc(0x1D, 0x56, 0x42, 0x00));
+  return Buffer.from(out);
+}
 function send(res, status, obj) {
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
@@ -180,7 +245,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true, message: 'Factura enviada', printer: PRINTER_NAME });
     }
     if (req.method === 'POST' && pathName === '/print/comanda') {
-      await printText(buildComanda(await readBody(req)));
+      await printRawBytes(buildComandaRaw(await readBody(req)));
       return send(res, 200, { ok: true, message: 'Comanda enviada', printer: PRINTER_NAME });
     }
     if (req.method === 'POST' && pathName === '/print/cierre') {
