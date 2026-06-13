@@ -2349,9 +2349,3 @@ textarea {
   background: #0b6c2e;
   color: white;
 }
-.order-page .order-head .actions-row button.active {
-  background: #0b3d24;
-  color: #fff;
-  border-color: #0b3d24;
-  box-shadow: 0 8px 18px rgba(11, 61, 36, 0.18);
-}
