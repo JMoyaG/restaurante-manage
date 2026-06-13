@@ -987,6 +987,12 @@ export default function App() {
       .replace(/[“”]/g, '"')
       .replace(/[‘’]/g, "'");
 
+  const centrarTicket = (texto: string, ancho = 42) => {
+    const valor = limpiarTextoTicket(texto).slice(0, ancho);
+    const espacios = Math.max(0, Math.floor((ancho - valor.length) / 2));
+    return `${" ".repeat(espacios)}${valor}`;
+  };
+
   const lineaTicket = (izquierda: string, derecha = "", ancho = 42) => {
     const izq = limpiarTextoTicket(izquierda).slice(0, ancho);
     const der = limpiarTextoTicket(derecha).slice(0, Math.max(0, ancho - 2));
@@ -994,91 +1000,133 @@ export default function App() {
     return `${izq}${" ".repeat(espacios)}${der}`;
   };
 
+  const formatoNumeroTicket = (valor: number) =>
+    Number(valor || 0).toLocaleString("es-CR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
+  const partirFechaHoraTicket = (valor?: string) => {
+    const limpio = limpiarTextoTicket(valor || "").trim();
+    const match = limpio.match(/^(\d{1,2}\/\d{1,2}\/\d{2,4}),?\s*(.*)$/);
+    return {
+      fecha: match?.[1] || limpio,
+      hora: (match?.[2] || "").trim(),
+    };
+  };
+
+  const recortarTicket = (texto: string, largo = 34) => {
+    const limpio = limpiarTextoTicket(texto || "");
+    return limpio.length > largo ? `${limpio.slice(0, largo - 3)}...` : limpio;
+  };
+
   const ticketComoTexto = (ticket: Ticket) => {
     const sep = "------------------------------------------";
     const lineas: string[] = [];
     const add = (valor = "") => lineas.push(limpiarTextoTicket(valor));
-    const itemLineas = (item: ItemOrden) => {
-      add(lineaTicket(`${item.cantidad}x ${item.nombre}`, formatoCRC(precioLinea(item))));
+
+    const itemFactura = (item: ItemOrden) => {
+      const nombre = recortarTicket(item.nombre, 28);
+      const total = formatoNumeroTicket(precioLinea(item));
+      add(lineaTicket(nombre, total));
+      if (item.cantidad > 1) add(`  ${item.cantidad} x ${formatoNumeroTicket(item.precio + item.extras.reduce((acc, extra) => acc + extra.precio, 0))}`);
       if (item.consumo === "LLEVAR") add("  PARA LLEVAR");
-      if (item.sinIngredientes.length) add(`  SIN: ${item.sinIngredientes.join(", ")}`);
-      if (item.extras.length) add(`  EXTRA: ${item.extras.map((e) => e.nombre).join(", ")}`);
-      if (item.nota.trim()) add(`  NOTA: ${item.nota.trim()}`);
+      if (item.sinIngredientes.length) add(`  SIN: ${recortarTicket(item.sinIngredientes.join(", "), 34)}`);
+      if (item.extras.length) add(`  EXTRA: ${recortarTicket(item.extras.map((e) => e.nombre).join(", "), 32)}`);
+      if (item.nota.trim()) add(`  NOTA: ${recortarTicket(item.nota.trim(), 33)}`);
+    };
+
+    const itemComanda = (item: ItemOrden) => {
+      add(`${String(item.cantidad).padEnd(5, " ")} ${recortarTicket(item.nombre, 34)}`);
+      if (item.consumo === "LLEVAR") add("      PARA LLEVAR");
+      if (item.sinIngredientes.length) add(`      SIN: ${recortarTicket(item.sinIngredientes.join(", "), 31)}`);
+      if (item.extras.length) add(`      EXTRA: ${recortarTicket(item.extras.map((e) => e.nombre).join(", "), 29)}`);
+      if (item.nota.trim()) add(`      NOTA: ${recortarTicket(item.nota.trim(), 30)}`);
     };
 
     if (ticket.tipo === "comanda") {
-      add("             COMANDA");
-      add(new Date().toLocaleDateString("es-CR"));
-      add(ticket.mesa.tipoOrden === "LLEVAR" ? "             LLEVAR" : `             ${ticket.mesa.nombre}`);
-      add(sep);
+      const fechaTicket = partirFechaHoraTicket(ticket.fecha);
+      add(centrarTicket("COMANDA"));
+      add("");
+      add(centrarTicket(fechaTicket.fecha || new Date().toLocaleDateString("es-CR")));
+      add("");
+      add(centrarTicket(ticket.mesa.tipoOrden === "LLEVAR" ? "Llevar" : "Aqui"));
+      add("");
       add(`A nombre de: ${ticket.mesa.cliente || "Cliente"}`);
       add(`Salonero: ${ticket.usuario}`);
-      add(`Hora: ${ticket.fecha}`);
-      add(`Mesa: ${ticket.mesa.nombre}`);
+      add(`Hora comanda: ${fechaTicket.hora || ticket.fecha}`);
+      add(`Mesa: ${ticket.mesa.tipoOrden === "LLEVAR" ? "LLEVAR" : ticket.mesa.nombre}`);
       add("Pacayas");
+      add("");
       add(sep);
-      ticket.items.forEach(itemLineas);
+      add("Cant. Descripcion");
       add(sep);
-      add("******* ULTIMA LINEA *******");
+      ticket.items.forEach(itemComanda);
+      add(sep);
+      add(centrarTicket("******ULTIMA LINEA******"));
       return `${lineas.join("\n")}\n\n\n`;
     }
 
     if (ticket.tipo === "cierre") {
       const cierre = ticket.cierre;
-      add("          GATO CALAVERA");
-      add("          CIERRE TURNO");
+      add(centrarTicket("GATO CALAVERA"));
+      add(centrarTicket("CIERRE TURNO"));
       add(sep);
       add(cierre.fecha);
       add(`Usuario: ${cierre.usuario}`);
       add(sep);
-      add(lineaTicket("Fondo vuelto", formatoCRC(cierre.montoApertura)));
-      add(lineaTicket("Total vendido", formatoCRC(cierre.totalGeneral)));
-      add(lineaTicket("Efectivo ventas", formatoCRC(cierre.efectivoVentas)));
-      add(lineaTicket("Tarjeta", formatoCRC(cierre.tarjeta)));
-      add(lineaTicket("SINPE", formatoCRC(cierre.sinpe)));
-      add(lineaTicket("Salidas", formatoCRC(cierre.salidas)));
-      add(lineaTicket("Esperado caja", formatoCRC(cierre.efectivoEsperado)));
-      add(lineaTicket("Contado", formatoCRC(cierre.efectivoReportado)));
-      add(lineaTicket("Diferencia", formatoCRC(cierre.diferencia)));
+      add(lineaTicket("Fondo vuelto", formatoNumeroTicket(cierre.montoApertura)));
+      add(lineaTicket("Total vendido", formatoNumeroTicket(cierre.totalGeneral)));
+      add(lineaTicket("Efectivo ventas", formatoNumeroTicket(cierre.efectivoVentas)));
+      add(lineaTicket("Tarjeta", formatoNumeroTicket(cierre.tarjeta)));
+      add(lineaTicket("SINPE", formatoNumeroTicket(cierre.sinpe)));
+      add(lineaTicket("Salidas", formatoNumeroTicket(cierre.salidas)));
+      add(lineaTicket("Esperado caja", formatoNumeroTicket(cierre.efectivoEsperado)));
+      add(lineaTicket("Contado", formatoNumeroTicket(cierre.efectivoReportado)));
+      add(lineaTicket("Diferencia", formatoNumeroTicket(cierre.diferencia)));
       add(sep);
       add("PRODUCTOS");
       Object.entries(cierre.productosVendidos || {}).forEach(([producto, cantidad]) => add(`${producto}: ${cantidad}`));
       add(sep);
-      add("******** FIN CIERRE ********");
+      add(centrarTicket("FIN CIERRE"));
       return `${lineas.join("\n")}\n\n\n`;
     }
 
     const venta = ticket.venta;
-    add("          GATO CALAVERA");
-    add("          COMIDA MEXICANA");
-    add("Gato Calavera Pacayas");
-    add("Alessandro Rubi Silesky");
-    add("ID No: 1-1835-0862");
-    add("alessandrorubi6@gmail.com");
-    add("Telefono: 7229-3155");
-    add("              FACTURA");
-    add(sep);
-    add(`Fecha apertura: ${venta.fechaApertura}`);
-    add(`Fecha cierre: ${venta.fechaCierre}`);
-    add(`Cuenta: ${venta.cuenta}   Mesa: ${venta.mesa}`);
+    const apertura = partirFechaHoraTicket(venta.fechaApertura);
+    const cierre = partirFechaHoraTicket(venta.fechaCierre);
+    add(centrarTicket("Gato Calavera Pacayas"));
+    add(centrarTicket("Alessandro Rubi Silesky"));
+    add(centrarTicket("ID No: 1-1835-0862"));
+    add(centrarTicket("alessandrorubi6@gmail.com"));
+    add(centrarTicket("Telefono: 7229-3155"));
+    add(centrarTicket("FACTURA"));
+    add("");
+    add(`Fecha apertura: ${[apertura.fecha, apertura.hora].filter(Boolean).join(" ")}`);
+    add(`Fecha cierre:   ${[cierre.fecha, cierre.hora].filter(Boolean).join(" ")}`);
+    add(lineaTicket(`Cuenta: ${venta.cuenta}`, `Mesa: ${venta.mesa}`));
     add(`Invitados: ${venta.invitados}`);
-    add(`Nombre: ${venta.cliente}`);
+    add("ID Cliente:");
+    add(`Nombre: ${venta.cliente || "Cliente Contado"}`);
     add(sep);
-    venta.items.forEach(itemLineas);
+    add(lineaTicket("Descripcion", "Precio"));
     add(sep);
-    add(lineaTicket("SubTotal", formatoCRC(venta.subtotal)));
-    if (venta.servicio > 0) add(lineaTicket("10% Servicio", formatoCRC(venta.servicio)));
-    add(lineaTicket("Total", formatoCRC(venta.total)));
+    venta.items.forEach(itemFactura);
+    add(sep);
+    add(lineaTicket("SubTotal:", formatoNumeroTicket(venta.subtotal)));
+    if (venta.servicio > 0) add(lineaTicket("10% Servicio:", formatoNumeroTicket(venta.servicio)));
+    add(lineaTicket("Total:", formatoNumeroTicket(venta.total)));
     if (venta.metodoPago === "Efectivo" || venta.metodoPago === "Mixto") {
-      add(lineaTicket("Recibido", formatoCRC(venta.montoRecibido)));
-      add(lineaTicket("Vuelto", formatoCRC(venta.vuelto)));
+      add(lineaTicket("Recibido:", formatoNumeroTicket(venta.montoRecibido)));
+      add(lineaTicket("Vuelto:", formatoNumeroTicket(venta.vuelto)));
     }
-    add(sep);
+    add("");
     add("Condicion de venta: Contado");
     add(`Metodo de pago: ${venta.metodoPago}`);
+    add(sep);
     add("Moneda: CRC");
     add(sep);
-    add("Regimen de Tributacion simplificada");
+    add(centrarTicket("Regimen de Tributacion Simplificada"));
     return `${lineas.join("\n")}\n\n\n`;
   };
 
