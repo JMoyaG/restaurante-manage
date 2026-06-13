@@ -732,13 +732,16 @@ export default function App() {
       alert("Solo Caja, Admin o Jefe puede abrir caja.");
       return;
     }
-    const texto = prompt("¿Con cuánto efectivo se abre la caja? Este monto es fondo para vuelto, no es ganancia.", "0");
+
+    const texto = window.prompt("¿Con cuánto efectivo se abre la caja? Este monto es fondo para vuelto, no es ganancia.", "0");
     if (texto === null) return;
+
     const monto = Number(texto);
     if (Number.isNaN(monto) || monto < 0) {
       alert("Monto inválido.");
       return;
     }
+
     const fecha = new Date().toLocaleString("es-CR");
     const usuario = usuarioActual?.nombre || rol || "Usuario";
     setCierreDetalle(null);
@@ -1437,7 +1440,8 @@ export default function App() {
               </div>
             </div>
 
-           
+            {tieneItemsImpresos && <div className="alert">Productos impresos quedan marcados como IMPRESO. No se eliminan ni se cambia cantidad/detalle, pero sí podés marcar Local/Llevar antes de cobrar.</div>}
+
             <div className="pos-order-workspace">
               {puedeEditarOrdenActual && (
                 <div className="pos-products-panel">
@@ -1608,7 +1612,7 @@ export default function App() {
                   <div className="actions-row bottom-actions">
                     {(esJefe || esAdmin || esMesero || esCaja) && <button className="primary" onClick={enviarComanda}>Imprimir comanda</button>}
                     {(esJefe || esAdmin || esMesero || esCaja) && <button onClick={solicitarCuenta}>Solicitar cuenta</button>}
-                    {puedeCobrar && <button className="blue" onClick={cobrar} disabled={!itemsCobroActual.length || !cajaAbierta}>Cobrar / imprimir factura</button>}
+                    {puedeCobrar && <button className="blue" onClick={cajaAbierta ? cobrar : abrirCaja} disabled={!itemsCobroActual.length}>{cajaAbierta ? "Cobrar / imprimir factura" : "Abrir caja para cobrar"}</button>}
                   </div>
                 </div>
               </div>
