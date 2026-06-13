@@ -1437,8 +1437,7 @@ export default function App() {
               </div>
             </div>
 
-            {tieneItemsImpresos && <div className="alert">Productos impresos quedan marcados como IMPRESO. No se eliminan ni se cambia cantidad/detalle, pero sí podés marcar Local/Llevar antes de cobrar.</div>}
-
+            
             <div className="pos-order-workspace">
               {puedeEditarOrdenActual && (
                 <div className="pos-products-panel">
