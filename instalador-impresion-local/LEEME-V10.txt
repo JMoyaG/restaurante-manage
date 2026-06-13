@@ -1,0 +1,12 @@
+GATO CALAVERA - INSTALADOR IMPRESION LOCAL V10
+
+V10 cambia el motor a RAW ESC/POS para que la factura pueda llevar logo real y para que el texto salga alineado como ticket térmico.
+
+Instalación:
+1. Extraer TODO el ZIP.
+2. Clic derecho sobre INSTALADOR-UNICO-GATO-CALAVERA-V10.cmd.
+3. Ejecutar como administrador.
+4. Validar http://127.0.0.1:5055/health
+5. Probar http://127.0.0.1:5055/test-print
+
+La impresora debe llamarse TERMICA.

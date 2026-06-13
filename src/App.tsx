@@ -1000,11 +1000,13 @@ export default function App() {
     return `${izq}${" ".repeat(espacios)}${der}`;
   };
 
-  const formatoNumeroTicket = (valor: number) =>
-    Number(valor || 0).toLocaleString("es-CR", {
+  const formatoNumeroTicket = (valor: number) => {
+    const numero = Number(valor || 0);
+    return numero.toLocaleString("en-US", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
+  };
 
   const partirFechaHoraTicket = (valor?: string) => {
     const limpio = limpiarTextoTicket(valor || "").trim();

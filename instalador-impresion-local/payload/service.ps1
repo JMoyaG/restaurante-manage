@@ -46,7 +46,10 @@ function Col($a, $b) {
   return $l + (" " * $spaces) + $r + "`n"
 }
 function Money($n) {
-  try { return ([decimal]$n).ToString("N2", [Globalization.CultureInfo]::GetCultureInfo("es-CR")) }
+  try {
+    $num = [Math]::Round([decimal]$n, 2)
+    return $num.ToString("#,##0.00", [Globalization.CultureInfo]::GetCultureInfo("en-US"))
+  }
   catch { return "0.00" }
 }
 function Fecha() { return (Get-Date).ToString("dd/MM/yyyy hh:mm tt", [Globalization.CultureInfo]::GetCultureInfo("es-CR")) }
@@ -158,7 +161,7 @@ function Get-Productos($data) {
   if ($data.productos -is [System.Array]) { return $data.productos }
   return @($data.productos)
 }
-function Build-TestTicket() { return "`n" + (Centro "GATO CALAVERA") + (Centro "PRUEBA DE IMPRESION") + (Linea) + (Col "Impresora" $PrinterName) + (Col "Estado" "OK") + (Col "Fecha" (Fecha)) + (Linea) + (Centro "SERVICIO LOCAL OK V9") }
+function Build-TestTicket() { return "`n" + (Centro "GATO CALAVERA") + (Centro "PRUEBA DE IMPRESION") + (Linea) + (Col "Impresora" $PrinterName) + (Col "Estado" "OK") + (Col "Fecha" (Fecha)) + (Linea) + (Centro "SERVICIO LOCAL OK V10") }
 function Build-Factura($data) {
   if ($null -ne $data.texto -and -not [string]::IsNullOrWhiteSpace([string]$data.texto)) { return [string]$data.texto }
   if ($null -ne $data.text -and -not [string]::IsNullOrWhiteSpace([string]$data.text)) { return [string]$data.text }
@@ -186,24 +189,24 @@ function Build-Cierre($data) {
   return "`n" + (Centro "GATO CALAVERA") + (Centro "CIERRE TURNO") + (Linea) + (Col "Fecha" (Fecha)) + (Col "TOTAL" (Money $data.total)) + (Linea)
 }
 try {
-  Write-Log "Iniciando servicio V9 RAW en 127.0.0.1:$Port"
+  Write-Log "Iniciando servicio V10 RAW en 127.0.0.1:$Port"
   $listener = New-Object Net.HttpListener
   $listener.Prefixes.Add("http://127.0.0.1:$Port/")
   $listener.Start()
-  Write-Log "Servicio activo V9 RAW"
+  Write-Log "Servicio activo V10 RAW"
   while ($listener.IsListening) {
     $ctx = $listener.GetContext()
     try {
       $path = $ctx.Request.Url.AbsolutePath.ToLowerInvariant()
       $method = $ctx.Request.HttpMethod.ToUpperInvariant()
-      if ($method -eq "OPTIONS") { Send-Json $ctx 200 @{ ok = $true; version = "9.0" }; continue }
-      if ($path -eq "/health") { $exists = $false; try { $null = Get-Printer -Name $PrinterName -ErrorAction Stop; $exists = $true } catch {}; Send-Json $ctx 200 @{ ok = $true; version = "9.0"; mode = "RAW_ESC_POS"; port = $Port; service = "GatoCalaveraPrintService"; printer = $PrinterName; printerFound = $exists; printerExists = $exists; message = "Servicio local Gato Calavera activo" }; continue }
-      if ($path -eq "/test-print" -or $path -eq "/print/test") { Print-RawTicket (Build-TestTicket) "test"; Send-Json $ctx 200 @{ ok = $true; version = "9.0"; message = "Prueba enviada" }; continue }
-      if ($path -eq "/print/factura") { $data = Get-JsonBody $ctx; Print-RawTicket (Build-Factura $data) "factura"; Send-Json $ctx 200 @{ ok = $true; version = "9.0"; message = "Factura enviada" }; continue }
-      if ($path -eq "/print/comanda") { $data = Get-JsonBody $ctx; Print-RawTicket (Build-Comanda $data) "comanda"; Send-Json $ctx 200 @{ ok = $true; version = "9.0"; message = "Comanda enviada" }; continue }
-      if ($path -eq "/print/cierre") { $data = Get-JsonBody $ctx; Print-RawTicket (Build-Cierre $data) "cierre"; Send-Json $ctx 200 @{ ok = $true; version = "9.0"; message = "Cierre enviado" }; continue }
-      if ($path -eq "/print") { $data = Get-JsonBody $ctx; $tipo = if($data.tipo){[string]$data.tipo}else{"ticket"}; $texto = if($data.texto){[string]$data.texto}elseif($data.text){[string]$data.text}else{""}; if([string]::IsNullOrWhiteSpace($texto)){throw "Texto vacio"}; Print-RawTicket $texto $tipo; Send-Json $ctx 200 @{ ok = $true; version = "9.0"; message = "Ticket enviado" }; continue }
-      Send-Json $ctx 404 @{ ok = $false; version = "9.0"; error = "Ruta no encontrada" }
-    } catch { Write-Log "Error request: $($_.Exception.Message)"; try { Send-Json $ctx 500 @{ ok = $false; version = "9.0"; error = $_.Exception.Message } } catch {} }
+      if ($method -eq "OPTIONS") { Send-Json $ctx 200 @{ ok = $true; version = "10.0" }; continue }
+      if ($path -eq "/health") { $exists = $false; try { $null = Get-Printer -Name $PrinterName -ErrorAction Stop; $exists = $true } catch {}; Send-Json $ctx 200 @{ ok = $true; version = "10.0"; mode = "RAW_ESC_POS"; port = $Port; service = "GatoCalaveraPrintService"; printer = $PrinterName; printerFound = $exists; printerExists = $exists; message = "Servicio local Gato Calavera activo" }; continue }
+      if ($path -eq "/test-print" -or $path -eq "/print/test") { Print-RawTicket (Build-TestTicket) "test"; Send-Json $ctx 200 @{ ok = $true; version = "10.0"; message = "Prueba enviada" }; continue }
+      if ($path -eq "/print/factura") { $data = Get-JsonBody $ctx; Print-RawTicket (Build-Factura $data) "factura"; Send-Json $ctx 200 @{ ok = $true; version = "10.0"; message = "Factura enviada" }; continue }
+      if ($path -eq "/print/comanda") { $data = Get-JsonBody $ctx; Print-RawTicket (Build-Comanda $data) "comanda"; Send-Json $ctx 200 @{ ok = $true; version = "10.0"; message = "Comanda enviada" }; continue }
+      if ($path -eq "/print/cierre") { $data = Get-JsonBody $ctx; Print-RawTicket (Build-Cierre $data) "cierre"; Send-Json $ctx 200 @{ ok = $true; version = "10.0"; message = "Cierre enviado" }; continue }
+      if ($path -eq "/print") { $data = Get-JsonBody $ctx; $tipo = if($data.tipo){[string]$data.tipo}else{"ticket"}; $texto = if($data.texto){[string]$data.texto}elseif($data.text){[string]$data.text}else{""}; if([string]::IsNullOrWhiteSpace($texto)){throw "Texto vacio"}; Print-RawTicket $texto $tipo; Send-Json $ctx 200 @{ ok = $true; version = "10.0"; message = "Ticket enviado" }; continue }
+      Send-Json $ctx 404 @{ ok = $false; version = "10.0"; error = "Ruta no encontrada" }
+    } catch { Write-Log "Error request: $($_.Exception.Message)"; try { Send-Json $ctx 500 @{ ok = $false; version = "10.0"; error = $_.Exception.Message } } catch {} }
   }
-} catch { Write-Log "ERROR FATAL V9: $($_.Exception.Message)"; Start-Sleep -Seconds 3; throw }
+} catch { Write-Log "ERROR FATAL V10: $($_.Exception.Message)"; Start-Sleep -Seconds 3; throw }
