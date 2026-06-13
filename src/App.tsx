@@ -1437,7 +1437,7 @@ export default function App() {
               </div>
             </div>
 
-            
+           
             <div className="pos-order-workspace">
               {puedeEditarOrdenActual && (
                 <div className="pos-products-panel">
