@@ -372,6 +372,8 @@ export default function App() {
     });
   }, [itemsPagoSeleccionados, mesaSeleccionada]);
 
+  const hayItemsCobroSinComanda = itemsCobroActual.some((item) => !item.enviadoComanda);
+  const textoBotonCobro = !cajaAbierta ? "Abrir caja para cobrar" : hayItemsCobroSinComanda ? "Primero imprimir comanda" : "Cobrar / imprimir factura";
   const totalesMesa = calcularTotales(mesaSeleccionada?.orden.filter((item) => !item.pagado) || []);
   const totalesCobro = calcularTotales(itemsCobroActual);
   const pagoUsaEfectivo = metodoPago === "Efectivo" || metodoPago === "Mixto";
@@ -648,7 +650,12 @@ export default function App() {
   const cobrar = () => {
     if (!mesaSeleccionada || !itemsCobroActual.length) return;
     if (!cajaAbierta) {
-      alert("Primero debés abrir caja.");
+      abrirCaja();
+      return;
+    }
+    const itemsSinComanda = itemsCobroActual.filter((item) => !item.enviadoComanda);
+    if (itemsSinComanda.length) {
+      alert("Primero imprimí la comanda antes de cobrar. Productos pendientes: " + itemsSinComanda.map((item) => `${item.cantidad}x ${item.nombre}`).join(", "));
       return;
     }
     if (pagoUsaEfectivo && montoRecibido < totalesCobro.total) {
@@ -1611,8 +1618,7 @@ export default function App() {
 
                   <div className="actions-row bottom-actions">
                     {(esJefe || esAdmin || esMesero || esCaja) && <button className="primary" onClick={enviarComanda}>Imprimir comanda</button>}
-                    {(esJefe || esAdmin || esMesero || esCaja) && <button onClick={solicitarCuenta}>Solicitar cuenta</button>}
-                    {puedeCobrar && <button className="blue" onClick={cajaAbierta ? cobrar : abrirCaja} disabled={!itemsCobroActual.length}>{cajaAbierta ? "Cobrar / imprimir factura" : "Abrir caja para cobrar"}</button>}
+                    {puedeCobrar && <button className="blue" onClick={cajaAbierta ? cobrar : abrirCaja} disabled={!itemsCobroActual.length} title={hayItemsCobroSinComanda ? "Primero imprimí la comanda" : undefined}>{textoBotonCobro}</button>}
                   </div>
                 </div>
               </div>

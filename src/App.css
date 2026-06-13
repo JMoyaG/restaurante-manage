@@ -2958,3 +2958,7 @@ textarea {
     overflow: visible !important;
   }
 }
+
+/* Fix V20: evita zonas invisibles encima de botones y mejora clicks en pantallas chicas */
+.pos-bottom-fixed, .actions-row, .pay-box, .category-card, .product-card, .order-tile { position: relative; z-index: 2; }
+button { touch-action: manipulation; }
