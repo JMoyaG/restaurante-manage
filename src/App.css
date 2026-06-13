@@ -2355,3 +2355,165 @@ textarea {
   border-color: #0b3d24;
   box-shadow: 0 8px 18px rgba(11, 61, 36, 0.18);
 }
+
+/* ===== POS EXPRESS LIMPIO - pantalla unica compacta ===== */
+.topbar {
+  display: none !important;
+}
+.content {
+  padding-top: 0 !important;
+}
+.page.order-page {
+  padding-top: 18px !important;
+  min-height: 100vh;
+}
+.order-page > button:first-child {
+  margin-bottom: 10px !important;
+}
+.order-head-simple {
+  display: block !important;
+  margin: 6px 0 12px !important;
+  padding: 0 !important;
+}
+.order-head-simple h1 {
+  font-size: clamp(28px, 4vw, 42px) !important;
+  margin-bottom: 8px !important;
+}
+.order-head-simple p,
+.order-head-simple .actions-row {
+  display: none !important;
+}
+.simple-client-field {
+  max-width: 440px;
+  margin: 0 !important;
+}
+.simple-client-field label {
+  width: 100%;
+}
+.simple-client-field input {
+  min-height: 46px;
+  font-size: 18px;
+}
+.pos-order-workspace {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 380px) !important;
+  gap: 14px !important;
+  align-items: stretch !important;
+}
+.pos-order-panel {
+  grid-column: 1 !important;
+  grid-row: 1 !important;
+  min-width: 0 !important;
+}
+.pos-products-panel {
+  grid-column: 2 !important;
+  grid-row: 1 !important;
+  min-width: 0 !important;
+  display: grid !important;
+  grid-template-columns: 118px minmax(0, 1fr) !important;
+  gap: 10px !important;
+  align-content: start !important;
+  max-height: calc(100vh - 145px) !important;
+  overflow: hidden !important;
+  position: sticky !important;
+  top: 12px !important;
+}
+.category-card-tabs {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  overflow-y: auto !important;
+  padding: 0 !important;
+  max-height: calc(100vh - 170px) !important;
+}
+.category-card-tabs button {
+  width: 100% !important;
+  min-height: 72px !important;
+  padding: 10px 8px !important;
+  border-radius: 16px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  align-items: center !important;
+  gap: 4px !important;
+  text-align: center !important;
+}
+.category-card-tabs span {
+  font-size: 22px !important;
+}
+.category-card-tabs b {
+  font-size: 12px !important;
+  line-height: 1.05 !important;
+}
+.product-card-grid-pos {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  overflow-y: auto !important;
+  max-height: calc(100vh - 170px) !important;
+  padding-right: 4px !important;
+}
+.product-pos-card {
+  width: 100% !important;
+  min-height: 86px !important;
+  padding: 12px !important;
+  border-radius: 16px !important;
+  display: grid !important;
+  grid-template-columns: 34px minmax(0, 1fr) !important;
+  grid-template-areas:
+    "icon name"
+    "icon desc"
+    "icon price"
+    "icon badge" !important;
+  text-align: left !important;
+  align-items: center !important;
+  column-gap: 10px !important;
+}
+.product-pos-icon { grid-area: icon !important; }
+.product-pos-card strong { grid-area: name !important; font-size: 15px !important; white-space: normal !important; }
+.product-pos-card small { grid-area: desc !important; font-size: 11px !important; }
+.product-pos-card b { grid-area: price !important; font-size: 15px !important; }
+.product-pos-card em { grid-area: badge !important; }
+.pos-bottom-fixed .totals-box,
+.totals-box {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+.pos-bottom-fixed .totals-box div,
+.totals-box div {
+  min-height: 54px !important;
+}
+.order-list-title small::after {
+  content: "";
+}
+
+@media (max-width: 1100px) {
+  .pos-order-workspace {
+    grid-template-columns: 1fr !important;
+  }
+  .pos-products-panel,
+  .pos-order-panel {
+    grid-column: 1 !important;
+    position: static !important;
+    max-height: none !important;
+  }
+  .pos-products-panel {
+    grid-template-columns: 105px 1fr !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .pos-products-panel {
+    grid-template-columns: 1fr !important;
+  }
+  .category-card-tabs {
+    flex-direction: row !important;
+    max-height: none !important;
+    overflow-x: auto !important;
+  }
+  .category-card-tabs button {
+    min-width: 110px !important;
+  }
+  .product-card-grid-pos {
+    max-height: 280px !important;
+  }
+}

@@ -220,11 +220,9 @@ const precioLinea = (item: ItemOrden) =>
 
 const calcularTotales = (items: ItemOrden[]) => {
   const subtotal = items.reduce((acc, item) => acc + precioLinea(item), 0);
-  const baseServicio = items
-    .filter((item) => item.consumo === "LOCAL")
-    .reduce((acc, item) => acc + precioLinea(item), 0);
-  const servicio = Math.round(baseServicio * 0.1);
-  return { subtotal, servicio, total: subtotal + servicio, baseServicio };
+  const baseServicio = 0;
+  const servicio = 0;
+  return { subtotal, servicio, total: subtotal, baseServicio };
 };
 
 const crearItem = (producto: Producto, consumo: TipoConsumo): ItemOrden => ({
@@ -721,8 +719,8 @@ export default function App() {
   };
 
   const imprimirCierre = (cierre: CierreCaja) => {
-    if (!puedeVerCajaDetallada) {
-      alert("Solo Admin o Jefe puede imprimir el cierre detallado.");
+    if (!puedeVerDetalleCierre(cierre)) {
+      alert("Solo Admin/Jefe puede imprimir historial completo. Caja solo puede imprimir el último cierre mientras la caja esté cerrada.");
       return;
     }
     const ticketCierre: Ticket = { tipo: "cierre", cierre };
@@ -743,6 +741,7 @@ export default function App() {
     }
     const fecha = new Date().toLocaleString("es-CR");
     const usuario = usuarioActual?.nombre || rol || "Usuario";
+    setCierreDetalle(null);
     setCajaActual({ abierta: true, montoApertura: monto, fechaApertura: fecha, usuario });
     setMovimientosCaja((prev) => [{
       id: Date.now(),
@@ -850,11 +849,11 @@ export default function App() {
     setSalidasDinero([]);
     setMovimientosCaja([]);
     setCajaActual(null);
+    setCierreDetalle(cierre);
     if (puedeVerCajaDetallada) {
-      setCierreDetalle(cierre);
       alert("Cierre de caja registrado. Revisá el detalle completo del cierre.");
     } else {
-      alert("Cierre de caja registrado. Ahora podés ver el último cierre del día.");
+      alert("Cierre de caja registrado. Podés ver el detalle de este último cierre hasta que abras caja de nuevo.");
     }
   };
 
@@ -1032,7 +1031,6 @@ export default function App() {
       const total = formatoNumeroTicket(precioLinea(item));
       add(lineaTicket(nombre, total));
       if (item.cantidad > 1) add(`  ${item.cantidad} x ${formatoNumeroTicket(item.precio + item.extras.reduce((acc, extra) => acc + extra.precio, 0))}`);
-      // En factura no se imprime PARA LLEVAR para mantener el ticket limpio.
       if (item.sinIngredientes.length) add(`  SIN: ${recortarTicket(item.sinIngredientes.join(", "), 34)}`);
       if (item.extras.length) add(`  EXTRA: ${recortarTicket(item.extras.map((e) => e.nombre).join(", "), 32)}`);
       if (item.nota.trim()) add(`  NOTA: ${recortarTicket(item.nota.trim(), 33)}`);
@@ -1337,6 +1335,9 @@ export default function App() {
   const ultimoCierre = cierresCaja[0];
   const fechaHoy = new Date().toLocaleDateString("es-CR");
   const ultimoCierreDelDia = cierresCaja.find((cierre) => (cierre.fecha || "").startsWith(fechaHoy));
+  const ultimoCierreVisibleCaja = !cajaAbierta ? ultimoCierreDelDia : undefined;
+  const puedeVerDetalleCierre = (cierre: CierreCaja) =>
+    puedeVerCajaDetallada || (esCajaOperativa && !cajaAbierta && Boolean(ultimoCierreVisibleCaja) && cierre.id === ultimoCierreVisibleCaja?.id);
 
   return (
     <div className="app-shell">
@@ -1421,10 +1422,10 @@ export default function App() {
         {vista === "mesas" && puedeUsarMesas && mesaSeleccionada && (
           <section className="page order-page no-print">
             <button onClick={() => setMesaId(null)}>← Volver</button>
-            <div className="order-head">
+            <div className="order-head order-head-simple">
               <div>
                 <h1>{mesaSeleccionada.nombre}</h1>
-                <div className="quick-order-fields">
+                <div className="quick-order-fields simple-client-field">
                   <label>Cliente
                     <input
                       value={mesaSeleccionada.cliente}
@@ -1432,20 +1433,7 @@ export default function App() {
                       placeholder="Nombre del cliente"
                     />
                   </label>
-                  <label>Personas
-                    <input
-                      type="number"
-                      min={1}
-                      value={mesaSeleccionada.invitados}
-                      onChange={(e) => actualizarMesa({ ...mesaSeleccionada, invitados: Number(e.target.value) || 1 })}
-                    />
-                  </label>
                 </div>
-                <p>Tipo: <b>{mesaSeleccionada.tipoOrden}</b> · Apertura: {mesaSeleccionada.fechaApertura || "No registrada"}</p>
-              </div>
-              <div className="actions-row">
-                <button className={mesaSeleccionada.tipoOrden === "LOCAL" ? "active" : ""} disabled={!puedeMarcarLlevarOrden} onClick={() => cambiarConsumoOrden("LOCAL")}>Local +10%</button>
-                <button className={mesaSeleccionada.tipoOrden === "LLEVAR" ? "active" : ""} disabled={!puedeMarcarLlevarOrden} onClick={() => cambiarConsumoOrden("LLEVAR")}>Llevar sin 10%</button>
               </div>
             </div>
 
@@ -1591,7 +1579,6 @@ export default function App() {
                 <div className="pos-bottom-fixed">
                   <div className="totals-box">
                     <div><span>Subtotal</span><b>{formatoCRC(totalesMesa.subtotal)}</b></div>
-                    <div><span>10% Servicio</span><b>{formatoCRC(totalesMesa.servicio)}</b></div>
                     <div><span>Total pendiente</span><b>{formatoCRC(totalesMesa.total)}</b></div>
                   </div>
 
@@ -1715,10 +1702,14 @@ export default function App() {
                 ))
               ) : cajaAbierta ? (
                 <p>El último cierre se oculta mientras la caja está abierta.</p>
-              ) : ultimoCierreDelDia ? (
-                <CierreResumenCajaCard cierre={ultimoCierreDelDia} />
+              ) : ultimoCierreVisibleCaja ? (
+                <CierreResumenCajaCard
+                  cierre={ultimoCierreVisibleCaja}
+                  onDetalle={() => setCierreDetalle(ultimoCierreVisibleCaja)}
+                  onImprimir={() => imprimirCierre(ultimoCierreVisibleCaja)}
+                />
               ) : null}
-              {puedeVerCajaDetallada ? (!ultimoCierre && <p>No hay cierres registrados.</p>) : (!cajaAbierta && !ultimoCierreDelDia && <p>No hay cierre registrado del día.</p>)}
+              {puedeVerCajaDetallada ? (!ultimoCierre && <p>No hay cierres registrados.</p>) : (!cajaAbierta && !ultimoCierreVisibleCaja && <p>No hay cierre registrado del día.</p>)}
             </div>
           </section>
         )}
@@ -1818,7 +1809,7 @@ export default function App() {
           />
         )}
 
-        {cierreDetalle && puedeVerCajaDetallada && (
+        {cierreDetalle && puedeVerDetalleCierre(cierreDetalle) && (
           <DetalleCierreModal
             cierre={cierreDetalle}
             onClose={() => setCierreDetalle(null)}
@@ -1836,13 +1827,19 @@ function Stat({ title, value }: { title: string; value: string }) {
   return <div className="stat-card"><small>{title}</small><strong>{value}</strong></div>;
 }
 
-function CierreResumenCajaCard({ cierre }: { cierre: CierreCaja }) {
+function CierreResumenCajaCard({ cierre, onDetalle, onImprimir }: { cierre: CierreCaja; onDetalle: () => void; onImprimir: () => void }) {
   return (
     <div className="cierre-card compact-cierre-card caja-limited-card">
-      <div>
-        <h3>{cierre.fecha}</h3>
-        <p>Cierre registrado por {cierre.usuario}</p>
-        <small>{cierre.cantidadVentas} ventas registradas. El detalle completo es solo para Admin o Jefe.</small>
+      <div className="section-title-row">
+        <div>
+          <h3>{cierre.fecha}</h3>
+          <p>Cierre registrado por {cierre.usuario}</p>
+          <small>{cierre.cantidadVentas} ventas registradas. Caja puede ver este detalle hasta abrir caja de nuevo.</small>
+        </div>
+        <div className="actions-row">
+          <button onClick={onDetalle}>Ver detalle</button>
+          <button onClick={onImprimir}>Imprimir cierre</button>
+        </div>
       </div>
     </div>
   );
@@ -2008,7 +2005,7 @@ function VentaDetalleRow({ venta }: { venta: Venta }) {
       {venta.items.map((item) => (
         <p key={item.uid}>{item.cantidad}x {item.nombre} · {item.consumo} · {formatoCRC(precioLinea(item))}</p>
       ))}
-      <small>Subtotal {formatoCRC(venta.subtotal)} · Servicio {formatoCRC(venta.servicio)} · Total {formatoCRC(venta.total)}</small>
+      <small>Subtotal {formatoCRC(venta.subtotal)} · Total {formatoCRC(venta.total)}</small>
     </div>
   );
 }
@@ -2127,7 +2124,7 @@ function TicketPrint({ ticket }: { ticket: Ticket | null }) {
       {venta.items.map((item) => (
         <div key={item.uid} className="fact-line">
           <span>{item.cantidad > 1 ? `${item.cantidad}x ` : ""}{item.nombre}</span><b>{formatoCRC(precioLinea(item))}</b>
-          {item.consumo === "LLEVAR" && <small>Para llevar · sin 10% servicio</small>}
+          {item.consumo === "LLEVAR" && <small>Para llevar</small>}
           {item.sinIngredientes.length > 0 && <small>SIN: {item.sinIngredientes.join(", ")}</small>}
           {item.extras.length > 0 && <small>EXTRAS: {item.extras.map((e) => `${e.nombre} ${formatoCRC(e.precio)}`).join(", ")}</small>}
           {item.nota && <small>Nota: {item.nota}</small>}
@@ -2135,7 +2132,6 @@ function TicketPrint({ ticket }: { ticket: Ticket | null }) {
       ))}
       <hr />
       <p className="total-line"><span>SubTotal:</span><b>{formatoCRC(venta.subtotal)}</b></p>
-      {venta.servicio > 0 && <p className="total-line"><span>10% Servicio:</span><b>{formatoCRC(venta.servicio)}</b></p>}
       <p className="total-line"><span>Total:</span><b>{formatoCRC(venta.total)}</b></p>
       {(venta.metodoPago === "Efectivo" || venta.metodoPago === "Mixto") && (
         <>
