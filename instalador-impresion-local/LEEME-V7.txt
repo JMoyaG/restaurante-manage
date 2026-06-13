@@ -1,0 +1,15 @@
+GATO CALAVERA - INSTALADOR IMPRESION LOCAL V7
+
+Este V7 corrige el error CORS desde Vercel:
+Access-Control-Allow-Origin contains multiple values '*, *'
+
+Uso:
+1. Extraer TODO el ZIP en una carpeta.
+2. Clic derecho en INSTALADOR-UNICO-GATO-CALAVERA-V7.cmd.
+3. Ejecutar como administrador.
+4. Validar http://127.0.0.1:5055/health, debe decir version 7.0.
+5. Validar http://127.0.0.1:5055/test-print.
+6. En el POS de Vercel hacer CTRL+F5 y probar impresora.
+
+El servicio queda como tarea de Windows:
+GatoCalaveraPrintService

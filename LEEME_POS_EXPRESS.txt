@@ -1,0 +1,18 @@
+GATO CALAVERA POS EXPRESS - CAMBIOS
+
+- Solo 4 mesas fijas.
+- Cliente es editable directamente en la orden.
+- Tocar el mismo producto suma cantidad en la linea nueva pendiente.
+- Productos ya enviados a comanda quedan marcados como IMPRESO.
+- Productos impresos no se pueden eliminar ni modificar.
+- Cajero/mesero pueden agregar mas productos despues de imprimir comanda.
+- Solo se manda a comanda lo nuevo.
+- Cobro/factura ya no exige solicitar cuenta primero.
+- Se mantiene instalador local V7 para impresion desde Vercel.
+
+Subir a Vercel:
+npm install
+npm run build
+git add .
+git commit -m "Convertir POS a flujo express de 4 mesas"
+git push origin main

@@ -201,7 +201,7 @@ const usuariosIniciales: Usuario[] = [
 ];
 
 const crearMesasIniciales = (): Mesa[] =>
-  Array.from({ length: 12 }, (_, index) => ({
+  Array.from({ length: 4 }, (_, index) => ({
     id: index + 1,
     nombre: `Mesa ${index + 1}`,
     estado: "Libre" as EstadoMesa,
@@ -279,7 +279,7 @@ export default function App() {
   const [passwordLogin, setPasswordLogin] = useState("");
   const [errorLogin, setErrorLogin] = useState("");
 
-  const [vista, setVista] = useState<Vista>("inicio");
+  const [vista, setVista] = useState<Vista>("mesas");
   const [categoriaActiva, setCategoriaActiva] = useState<CategoriaProducto>("Tacos");
   const [productos, setProductos] = useState<Producto[]>(() => cargarLocalStorage("gato_productos", productosGato));
   const [mesas, setMesas] = useState<Mesa[]>(() => cargarLocalStorage("gato_mesas", crearMesasIniciales()));
@@ -358,10 +358,12 @@ export default function App() {
 
   const mesaSeleccionada = useMemo(() => mesas.find((mesa) => mesa.id === mesaId) || null, [mesaId, mesas]);
   const cuentaSolicitada = mesaSeleccionada?.estado === "Cuenta solicitada";
-  const ordenBloqueada = Boolean(
-    mesaSeleccionada?.orden.some((item) => item.enviadoComanda) || cuentaSolicitada
-  );
-  const puedeEditarOrdenActual = esJefe || esAdmin || ((esMesero || esCaja) && !ordenBloqueada);
+  const tieneItemsImpresos = Boolean(mesaSeleccionada?.orden.some((item) => item.enviadoComanda));
+  const puedeAgregarOrdenActual = Boolean(mesaSeleccionada && (esJefe || esAdmin || esMesero || esCaja) && (mesaSeleccionada.orden.length === 0 || mesaSeleccionada.orden.some((item) => !item.pagado)));
+  const puedeEditarOrdenActual = puedeAgregarOrdenActual;
+  const puedeMarcarLlevarOrden = Boolean(mesaSeleccionada && puedeUsarMesas && (mesaSeleccionada.orden.length === 0 || mesaSeleccionada.orden.some((item) => !item.pagado)));
+  const puedeMarcarLlevarItem = (item: ItemOrden) => puedeUsarMesas && !item.pagado;
+  const puedeEditarItem = (item: ItemOrden) => puedeEditarOrdenActual && !item.enviadoComanda && !item.pagado;
 
   const itemsCobroActual = useMemo(() => {
     if (!mesaSeleccionada) return [];
@@ -411,9 +413,7 @@ export default function App() {
 
   useEffect(() => {
     if (!usuarioActual) return;
-    const rolesUsuario = normalizarRolesUsuario(usuarioActual);
-    if (rolesUsuario.includes("Caja") && rolesUsuario.length === 1) setVista("caja");
-    else setVista("inicio");
+    setVista("mesas");
   }, [usuarioActual]);
 
   const iniciarSesion = () => {
@@ -443,21 +443,23 @@ export default function App() {
   };
 
   const actualizarMesa = (mesaActualizada: Mesa) => {
-    const tipoOrden = inferirTipoOrden(mesaActualizada.orden);
+    const tipoOrden = mesaActualizada.orden.length
+      ? inferirTipoOrden(mesaActualizada.orden)
+      : mesaActualizada.esParaLlevar || mesaActualizada.tipoOrden === "LLEVAR"
+        ? "LLEVAR"
+        : "LOCAL";
     setMesas((prev) => prev.map((mesa) => (mesa.id === mesaActualizada.id ? { ...mesaActualizada, tipoOrden } : mesa)));
   };
 
   const abrirMesa = (mesa: Mesa) => {
     if (mesa.estado === "Libre" && !mesa.fechaApertura) {
-      const cliente = prompt("¿A nombre de quién está la mesa o pedido?");
+      const cliente = prompt("Nombre del cliente", mesa.esParaLlevar ? "Cliente para llevar" : "Cliente contado");
       if (!cliente?.trim()) return;
-      const invitadosTexto = prompt("¿Cuántos invitados?", "1") || "1";
-      const invitados = Number(invitadosTexto) || 1;
       actualizarMesa({
         ...mesa,
         estado: "Ocupada",
         cliente: cliente.trim(),
-        invitados,
+        invitados: 1,
         fechaApertura: new Date().toLocaleString("es-CR"),
       });
     }
@@ -513,16 +515,40 @@ export default function App() {
 
   const agregarProductoOrden = (producto: Producto) => {
     if (!mesaSeleccionada) return;
-    if (!puedeEditarOrdenActual) {
-      alert("Esta orden ya fue enviada a comanda o ya tiene cuenta solicitada. Solo Jefe o Admin puede agregar o modificar productos.");
+    if (!puedeAgregarOrdenActual) {
+      alert("Esta orden ya está pagada o no puede recibir productos.");
       return;
     }
     const consumo: TipoConsumo = mesaSeleccionada.esParaLlevar || mesaSeleccionada.tipoOrden === "LLEVAR" ? "LLEVAR" : "LOCAL";
-    actualizarMesa({ ...mesaSeleccionada, estado: "Ocupada", orden: [...mesaSeleccionada.orden, crearItem(producto, consumo)] });
+    const orden = [...mesaSeleccionada.orden];
+    const itemExistenteNuevo = orden.find((item) =>
+      !item.enviadoComanda &&
+      !item.pagado &&
+      item.id === producto.id &&
+      item.consumo === consumo &&
+      !item.nota.trim() &&
+      item.sinIngredientes.length === 0 &&
+      item.extras.length === 0
+    );
+
+    if (itemExistenteNuevo) {
+      const ordenActualizada = orden.map((item) =>
+        item.uid === itemExistenteNuevo.uid ? { ...item, cantidad: item.cantidad + 1 } : item
+      );
+      actualizarMesa({ ...mesaSeleccionada, estado: "Ocupada", orden: ordenActualizada });
+      return;
+    }
+
+    actualizarMesa({ ...mesaSeleccionada, estado: "Ocupada", orden: [...orden, crearItem(producto, consumo)] });
   };
 
   const cambiarCantidad = (uid: string, cambio: number) => {
     if (!mesaSeleccionada || !puedeEditarOrdenActual) return;
+    const itemActual = mesaSeleccionada.orden.find((item) => item.uid === uid);
+    if (!itemActual || itemActual.enviadoComanda || itemActual.pagado) {
+      alert("Este producto ya fue impreso en comanda. No se puede modificar; agregá una línea nueva si ocupás más.");
+      return;
+    }
     const orden = mesaSeleccionada.orden
       .map((item) => (item.uid === uid ? { ...item, cantidad: item.cantidad + cambio } : item))
       .filter((item) => item.cantidad > 0);
@@ -531,12 +557,20 @@ export default function App() {
 
   const eliminarItem = (uid: string) => {
     if (!mesaSeleccionada || !puedeEditarOrdenActual) return;
+    const itemActual = mesaSeleccionada.orden.find((item) => item.uid === uid);
+    if (!itemActual) return;
+    if (itemActual.enviadoComanda || itemActual.pagado) {
+      alert("Este producto ya fue impreso en comanda/factura. No se puede eliminar.");
+      return;
+    }
     const orden = mesaSeleccionada.orden.filter((item) => item.uid !== uid);
     actualizarMesa({ ...mesaSeleccionada, estado: orden.length ? "Ocupada" : "Libre", orden });
   };
 
   const actualizarItem = (uid: string, cambios: Partial<ItemOrden>) => {
     if (!mesaSeleccionada || !puedeEditarOrdenActual) return;
+    const itemActual = mesaSeleccionada.orden.find((item) => item.uid === uid);
+    if (!itemActual || itemActual.enviadoComanda || itemActual.pagado) return;
     actualizarMesa({ ...mesaSeleccionada, orden: mesaSeleccionada.orden.map((item) => (item.uid === uid ? { ...item, ...cambios } : item)) });
   };
 
@@ -554,21 +588,33 @@ export default function App() {
   };
 
   const cambiarConsumoItem = (uid: string, consumo: TipoConsumo) => {
-    if (!mesaSeleccionada) return;
-    if (!(esJefe || esAdmin || !ordenBloqueada)) {
-      alert("Solo Jefe o Admin puede cambiar a llevar/local cuando la orden ya fue enviada o la cuenta ya fue solicitada.");
+    if (!mesaSeleccionada || !puedeUsarMesas) return;
+    const itemActual = mesaSeleccionada.orden.find((item) => item.uid === uid);
+    if (!itemActual || itemActual.pagado) {
+      alert("Este producto ya está pagado. No se puede cambiar entre local/llevar.");
       return;
     }
-    actualizarItem(uid, { consumo });
+    actualizarMesa({
+      ...mesaSeleccionada,
+      orden: mesaSeleccionada.orden.map((item) => (item.uid === uid ? { ...item, consumo } : item)),
+    });
   };
 
   const cambiarConsumoOrden = (consumo: TipoConsumo) => {
-    if (!mesaSeleccionada) return;
-    if (!(esJefe || esAdmin || !ordenBloqueada)) {
-      alert("Solo Jefe o Admin puede cambiar una orden ya enviada o con cuenta solicitada.");
+    if (!mesaSeleccionada || !puedeUsarMesas) return;
+    const itemsNoPagados = mesaSeleccionada.orden.filter((item) => !item.pagado);
+    if (mesaSeleccionada.orden.length > 0 && itemsNoPagados.length === 0) {
+      alert("Esta orden ya está pagada. No se puede cambiar entre local/llevar.");
       return;
     }
-    actualizarMesa({ ...mesaSeleccionada, esParaLlevar: consumo === "LLEVAR", orden: mesaSeleccionada.orden.map((item) => ({ ...item, consumo })) });
+    actualizarMesa({
+      ...mesaSeleccionada,
+      tipoOrden: consumo,
+      esParaLlevar: consumo === "LLEVAR",
+      orden: mesaSeleccionada.orden.map((item) =>
+        item.pagado ? item : { ...item, consumo }
+      ),
+    });
   };
 
   const enviarComanda = () => {
@@ -603,10 +649,6 @@ export default function App() {
 
   const cobrar = () => {
     if (!mesaSeleccionada || !itemsCobroActual.length) return;
-    if (mesaSeleccionada.estado !== "Cuenta solicitada") {
-      alert("Primero debés solicitar la cuenta para habilitar el cobro.");
-      return;
-    }
     if (!cajaAbierta) {
       alert("Primero debés abrir caja.");
       return;
@@ -1332,16 +1374,32 @@ export default function App() {
             <div className="order-head">
               <div>
                 <h1>{mesaSeleccionada.nombre}</h1>
-                <p>A nombre de: <b>{mesaSeleccionada.cliente || "Sin nombre"}</b> · Invitados: {mesaSeleccionada.invitados}</p>
+                <div className="quick-order-fields">
+                  <label>Cliente
+                    <input
+                      value={mesaSeleccionada.cliente}
+                      onChange={(e) => actualizarMesa({ ...mesaSeleccionada, cliente: e.target.value })}
+                      placeholder="Nombre del cliente"
+                    />
+                  </label>
+                  <label>Personas
+                    <input
+                      type="number"
+                      min={1}
+                      value={mesaSeleccionada.invitados}
+                      onChange={(e) => actualizarMesa({ ...mesaSeleccionada, invitados: Number(e.target.value) || 1 })}
+                    />
+                  </label>
+                </div>
                 <p>Tipo: <b>{mesaSeleccionada.tipoOrden}</b> · Apertura: {mesaSeleccionada.fechaApertura || "No registrada"}</p>
               </div>
               <div className="actions-row">
-                <button disabled={!puedeEditarOrdenActual} onClick={() => cambiarConsumoOrden("LOCAL")}>Orden local +10%</button>
-                <button disabled={!puedeEditarOrdenActual} onClick={() => cambiarConsumoOrden("LLEVAR")}>Orden llevar sin 10%</button>
+                <button className={mesaSeleccionada.tipoOrden === "LOCAL" ? "active" : ""} disabled={!puedeMarcarLlevarOrden} onClick={() => cambiarConsumoOrden("LOCAL")}>Local +10%</button>
+                <button className={mesaSeleccionada.tipoOrden === "LLEVAR" ? "active" : ""} disabled={!puedeMarcarLlevarOrden} onClick={() => cambiarConsumoOrden("LLEVAR")}>Llevar sin 10%</button>
               </div>
             </div>
 
-            {ordenBloqueada && !puedeEditarOrdenActual && <div className="alert">Orden bloqueada para edición. Solo Jefe o Admin puede agregar, quitar o modificar productos.</div>}
+            {tieneItemsImpresos && <div className="alert">Productos impresos quedan marcados como IMPRESO. No se eliminan ni se cambia cantidad/detalle, pero sí podés marcar Local/Llevar antes de cobrar.</div>}
 
             <div className="pos-order-workspace">
               {puedeEditarOrdenActual && (
@@ -1401,7 +1459,7 @@ export default function App() {
                         <div key={item.uid} className="order-item tile-order-item">
                           <div className="tile-order-header">
                             <div className="tile-order-title">
-                              <h3>{item.cantidad}x {item.nombre}</h3>
+                              <h3>{item.cantidad}x {item.nombre} {item.enviadoComanda ? <span className="printed-badge">IMPRESO</span> : <span className="new-badge">NUEVO</span>}</h3>
                               <p>{item.descripcion}</p>
                             </div>
                             <b>{formatoCRC(precioLinea(item))}</b>
@@ -1417,7 +1475,7 @@ export default function App() {
 
                           <div className="tile-order-actions">
                             <details className="modifier-details inline-edit-details">
-                              <summary>{puedeEditarOrdenActual ? "▶ Editar" : "▶ Detalle"}</summary>
+                              <summary>{puedeEditarItem(item) ? "▶ Editar" : "▶ Detalle"}</summary>
                               <div className="modifier-body inline-edit-body">
   <div className="edit-panel-top">
     <b>Modificar {item.nombre}</b>
@@ -1434,7 +1492,7 @@ export default function App() {
     </button>
   </div>
 
-  <textarea disabled={!puedeEditarOrdenActual} value={item.nota} onChange={(e) => actualizarItem(item.uid, { nota: e.target.value })} placeholder="Nota para cocina" />{puedeEditarOrdenActual ? (
+  <textarea disabled={!puedeEditarItem(item)} value={item.nota} onChange={(e) => actualizarItem(item.uid, { nota: e.target.value })} placeholder="Nota para cocina" />{puedeEditarItem(item) ? (
                                   <div className="mod-grid compact-mod-grid">
                                     {item.ingredientes.map((ingrediente) => (
                                       <label key={ingrediente}><input type="checkbox" checked={item.sinIngredientes.includes(ingrediente)} onChange={() => toggleIngrediente(item, ingrediente)} /> Sin {ingrediente}</label>
@@ -1458,13 +1516,13 @@ export default function App() {
                               <input
                                 type="checkbox"
                                 checked={item.consumo === "LLEVAR"}
-                                disabled={!puedeEditarOrdenActual}
+                                disabled={!puedeMarcarLlevarItem(item)}
                                 onChange={() => cambiarConsumoItem(item.uid, item.consumo === "LOCAL" ? "LLEVAR" : "LOCAL")}
                               />
                               Llevar
                             </label>
 
-                            {puedeEditarOrdenActual && (
+                            {puedeEditarItem(item) && (
                               <div className="qty-control tile-qty-control">
                                 <button onClick={() => cambiarCantidad(item.uid, -1)}>-</button>
                                 <span>{item.cantidad}</span>
@@ -1472,7 +1530,7 @@ export default function App() {
                               </div>
                             )}
 
-                            {puedeEditarOrdenActual && <button className="danger-mini tile-delete-button" onClick={() => eliminarItem(item.uid)}>Eliminar</button>}
+                            {puedeEditarItem(item) && <button className="danger-mini tile-delete-button" onClick={() => eliminarItem(item.uid)}>Eliminar</button>}
                           </div>
                         </div>
                       );
@@ -1487,7 +1545,7 @@ export default function App() {
                     <div><span>Total pendiente</span><b>{formatoCRC(totalesMesa.total)}</b></div>
                   </div>
 
-                  {puedeCobrar && cuentaSolicitada && (
+                  {puedeCobrar && mesaSeleccionada.orden.some((item) => !item.pagado) && (
                     <div className="pay-box">
                       {!cajaAbierta ? <button onClick={abrirCaja} className="primary">Abrir caja</button> : null}
                       <button onClick={toggleCuentaDividida}>{mesaSeleccionada.cuentaDividida ? "Desactivar cuenta dividida" : "Cuenta dividida"}</button>
@@ -1512,9 +1570,9 @@ export default function App() {
                   )}
 
                   <div className="actions-row bottom-actions">
-                    {(esJefe || esAdmin || esMesero || esCaja) && !cuentaSolicitada && <button className="primary" onClick={enviarComanda}>Imprimir comanda</button>}
-                    {(esJefe || esAdmin || esMesero || esCaja) && !cuentaSolicitada && <button onClick={solicitarCuenta}>Solicitar cuenta</button>}
-                    {puedeCobrar && cuentaSolicitada && <button className="blue" onClick={cobrar} disabled={!itemsCobroActual.length || !cajaAbierta}>Cobrar / imprimir factura</button>}
+                    {(esJefe || esAdmin || esMesero || esCaja) && <button className="primary" onClick={enviarComanda}>Imprimir comanda</button>}
+                    {(esJefe || esAdmin || esMesero || esCaja) && <button onClick={solicitarCuenta}>Solicitar cuenta</button>}
+                    {puedeCobrar && <button className="blue" onClick={cobrar} disabled={!itemsCobroActual.length || !cajaAbierta}>Cobrar / imprimir factura</button>}
                   </div>
                 </div>
               </div>
