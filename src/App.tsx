@@ -12,7 +12,7 @@ type Rol = "Jefe" | "Admin" | "Caja" | "Mesero";
 type EstadoMesa = "Libre" | "Ocupada" | "Cuenta solicitada";
 type MetodoPago = "Efectivo" | "Tarjeta" | "SINPE" | "Mixto";
 type TipoConsumo = "LOCAL" | "LLEVAR";
-type CategoriaProducto = "Tacos" | "Hamburguesas" | "Papas" | "Especiales" | "Bebidas";
+type CategoriaProducto = string;
 type Vista = "inicio" | "mesas" | "caja" | "facturas" | "menu" | "usuarios" | "qr";
 
 type Usuario = {
@@ -134,6 +134,7 @@ type Ticket =
   | { tipo: "cierre"; cierre: CierreCaja };
 
 const categoriasProducto: CategoriaProducto[] = ["Tacos", "Hamburguesas", "Papas", "Especiales", "Bebidas"];
+const ADMIN_OVERRIDE_CODE = "118350";
 const rolesDisponibles: Rol[] = ["Jefe", "Admin", "Caja", "Mesero"];
 
 const normalizarRolesUsuario = (usuario?: Usuario | null): Rol[] => {
@@ -278,7 +279,8 @@ export default function App() {
   const [errorLogin, setErrorLogin] = useState("");
 
   const [vista, setVista] = useState<Vista>("mesas");
-  const [categoriaActiva, setCategoriaActiva] = useState<CategoriaProducto>("Tacos");
+  const [categoriasMenu, setCategoriasMenu] = useState<CategoriaProducto[]>(() => cargarLocalStorage("gato_categorias", categoriasProducto));
+  const [categoriaActiva, setCategoriaActiva] = useState<CategoriaProducto>(() => cargarLocalStorage<CategoriaProducto[]>("gato_categorias", categoriasProducto)[0] || "Tacos");
   const [productos, setProductos] = useState<Producto[]>(() => cargarLocalStorage("gato_productos", productosGato));
   const [mesas, setMesas] = useState<Mesa[]>(() => cargarLocalStorage("gato_mesas", crearMesasIniciales()));
   const [mesaId, setMesaId] = useState<number | null>(null);
@@ -304,6 +306,7 @@ export default function App() {
     ingredientes: [],
   });
   const [nuevoUsuario, setNuevoUsuario] = useState<Usuario>({ usuario: "", password: "", nombre: "", rol: "Mesero", roles: ["Mesero"] });
+  const [nuevaFamilia, setNuevaFamilia] = useState("");
   const [impresoraOnline, setImpresoraOnline] = useState(false);
   const [mensajeImpresora, setMensajeImpresora] = useState("Verificando impresora local...");
 
@@ -362,6 +365,21 @@ export default function App() {
   const puedeMarcarLlevarOrden = Boolean(mesaSeleccionada && puedeUsarMesas && (mesaSeleccionada.orden.length === 0 || mesaSeleccionada.orden.some((item) => !item.pagado)));
   const puedeMarcarLlevarItem = (item: ItemOrden) => puedeUsarMesas && !item.pagado;
   const puedeEditarItem = (item: ItemOrden) => puedeEditarOrdenActual && !item.enviadoComanda && !item.pagado;
+  const puedeUsarCodigoAdmin = esJefe || esAdmin;
+  const solicitarCodigoAdmin = (accion: string) => {
+    if (!puedeUsarCodigoAdmin) {
+      alert("Solo Jefe o Admin puede " + accion + ".");
+      return false;
+    }
+    const codigo = prompt("Código administrador para " + accion);
+    if (codigo !== ADMIN_OVERRIDE_CODE) {
+      alert("Código administrador incorrecto.");
+      return false;
+    }
+    return true;
+  };
+  const puedeMostrarControlesItem = (item: ItemOrden) => puedeEditarItem(item) || (puedeUsarCodigoAdmin && !item.pagado);
+  const iconoCategoria = (categoria: string) => categoria === "Tacos" ? "🌮" : categoria === "Hamburguesas" ? "🍔" : categoria === "Papas" ? "🍟" : categoria === "Bebidas" ? "🥤" : "🌯";
 
   const itemsCobroActual = useMemo(() => {
     if (!mesaSeleccionada) return [];
@@ -396,6 +414,7 @@ export default function App() {
 
   useEffect(() => localStorage.setItem("gato_usuarios", JSON.stringify(usuarios)), [usuarios]);
   useEffect(() => localStorage.setItem("gato_productos", JSON.stringify(productos)), [productos]);
+  useEffect(() => localStorage.setItem("gato_categorias", JSON.stringify(categoriasMenu)), [categoriasMenu]);
   useEffect(() => localStorage.setItem("gato_mesas", JSON.stringify(mesas)), [mesas]);
   useEffect(() => localStorage.setItem("gato_ventas", JSON.stringify(ventas)), [ventas]);
   useEffect(() => localStorage.setItem("gato_salidas", JSON.stringify(salidasDinero)), [salidasDinero]);
@@ -410,6 +429,12 @@ export default function App() {
     setItemsPagoSeleccionados([]);
     setMontoRecibido(0);
   }, [mesaId]);
+
+  useEffect(() => {
+    if (!categoriasMenu.includes(categoriaActiva)) {
+      setCategoriaActiva(categoriasMenu[0] || "Tacos");
+    }
+  }, [categoriasMenu, categoriaActiva]);
 
   useEffect(() => {
     if (!usuarioActual) return;
@@ -545,24 +570,25 @@ export default function App() {
   const cambiarCantidad = (uid: string, cambio: number) => {
     if (!mesaSeleccionada || !puedeEditarOrdenActual) return;
     const itemActual = mesaSeleccionada.orden.find((item) => item.uid === uid);
-    if (!itemActual || itemActual.enviadoComanda || itemActual.pagado) {
-      alert("Este producto ya fue impreso en comanda. No se puede modificar; agregá una línea nueva si ocupás más.");
+    if (!itemActual || itemActual.pagado) return;
+    if (itemActual.enviadoComanda && !solicitarCodigoAdmin("cambiar cantidades de productos impresos")) return;
+    const nuevaCantidad = itemActual.cantidad + cambio;
+    if (nuevaCantidad <= 0) {
+      if (!confirm(`¿Eliminar ${itemActual.cantidad}x ${itemActual.nombre} de la orden?`)) return;
+      const orden = mesaSeleccionada.orden.filter((item) => item.uid !== uid);
+      actualizarMesa({ ...mesaSeleccionada, estado: orden.length ? "Ocupada" : "Libre", orden });
       return;
     }
-    const orden = mesaSeleccionada.orden
-      .map((item) => (item.uid === uid ? { ...item, cantidad: item.cantidad + cambio } : item))
-      .filter((item) => item.cantidad > 0);
+    const orden = mesaSeleccionada.orden.map((item) => (item.uid === uid ? { ...item, cantidad: nuevaCantidad } : item));
     actualizarMesa({ ...mesaSeleccionada, estado: orden.length ? "Ocupada" : "Libre", orden });
   };
 
   const eliminarItem = (uid: string) => {
     if (!mesaSeleccionada || !puedeEditarOrdenActual) return;
     const itemActual = mesaSeleccionada.orden.find((item) => item.uid === uid);
-    if (!itemActual) return;
-    if (itemActual.enviadoComanda || itemActual.pagado) {
-      alert("Este producto ya fue impreso en comanda/factura. No se puede eliminar.");
-      return;
-    }
+    if (!itemActual || itemActual.pagado) return;
+    if (itemActual.enviadoComanda && !solicitarCodigoAdmin("eliminar productos impresos")) return;
+    if (!confirm(`¿Eliminar ${itemActual.cantidad}x ${itemActual.nombre} de la orden?`)) return;
     const orden = mesaSeleccionada.orden.filter((item) => item.uid !== uid);
     actualizarMesa({ ...mesaSeleccionada, estado: orden.length ? "Ocupada" : "Libre", orden });
   };
@@ -570,7 +596,8 @@ export default function App() {
   const actualizarItem = (uid: string, cambios: Partial<ItemOrden>) => {
     if (!mesaSeleccionada || !puedeEditarOrdenActual) return;
     const itemActual = mesaSeleccionada.orden.find((item) => item.uid === uid);
-    if (!itemActual || itemActual.enviadoComanda || itemActual.pagado) return;
+    if (!itemActual || itemActual.pagado) return;
+    if (itemActual.enviadoComanda && !solicitarCodigoAdmin("modificar productos impresos")) return;
     actualizarMesa({ ...mesaSeleccionada, orden: mesaSeleccionada.orden.map((item) => (item.uid === uid ? { ...item, ...cambios } : item)) });
   };
 
@@ -594,6 +621,7 @@ export default function App() {
       alert("Este producto ya está pagado. No se puede cambiar entre local/llevar.");
       return;
     }
+    if (itemActual.enviadoComanda && !solicitarCodigoAdmin("cambiar local/llevar de productos impresos")) return;
     actualizarMesa({
       ...mesaSeleccionada,
       orden: mesaSeleccionada.orden.map((item) => (item.uid === uid ? { ...item, consumo } : item)),
@@ -602,6 +630,7 @@ export default function App() {
 
   const cambiarConsumoOrden = (consumo: TipoConsumo) => {
     if (!mesaSeleccionada || !puedeUsarMesas) return;
+    if (mesaSeleccionada.orden.some((item) => item.enviadoComanda && !item.pagado) && !solicitarCodigoAdmin("cambiar local/llevar de un pedido impreso")) return;
     const itemsNoPagados = mesaSeleccionada.orden.filter((item) => !item.pagado);
     if (mesaSeleccionada.orden.length > 0 && itemsNoPagados.length === 0) {
       alert("Esta orden ya está pagada. No se puede cambiar entre local/llevar.");
@@ -615,6 +644,37 @@ export default function App() {
         item.pagado ? item : { ...item, consumo }
       ),
     });
+  };
+
+  const eliminarPedidoCompleto = () => {
+    if (!mesaSeleccionada) return;
+    if (!mesaSeleccionada.orden.length) {
+      if (mesaSeleccionada.esParaLlevar) {
+        setMesas((prev) => prev.filter((mesa) => mesa.id !== mesaSeleccionada.id));
+        setMesaId(null);
+      }
+      return;
+    }
+    if (!solicitarCodigoAdmin("eliminar el pedido completo")) return;
+    if (!confirm(`¿Eliminar todo el pedido de ${mesaSeleccionada.nombre}? Esta acción no se puede deshacer.`)) return;
+    if (mesaSeleccionada.esParaLlevar) {
+      setMesas((prev) => prev.filter((mesa) => mesa.id !== mesaSeleccionada.id));
+      setMesaId(null);
+      return;
+    }
+    actualizarMesa({
+      ...mesaSeleccionada,
+      estado: "Libre",
+      orden: [],
+      cliente: "",
+      invitados: 1,
+      tipoOrden: "LOCAL",
+      esParaLlevar: false,
+      cuentaDividida: false,
+      fechaApertura: undefined,
+    });
+    setItemsPagoSeleccionados([]);
+    setMontoRecibido(0);
   };
 
   const enviarComanda = () => {
@@ -872,8 +932,9 @@ export default function App() {
       alert("Nombre y precio son obligatorios.");
       return;
     }
+    if (!categoriasMenu.includes(nuevoProducto.categoria)) setCategoriasMenu((prev) => [...prev, nuevoProducto.categoria]);
     setProductos((prev) => [...prev, { ...nuevoProducto, id: Date.now(), ingredientes: nuevoProducto.ingredientes || [] }]);
-    setNuevoProducto({ id: 0, categoria: "Tacos", nombre: "", descripcion: "", precio: 0, ingredientes: [] });
+    setNuevoProducto({ id: 0, categoria: categoriasMenu[0] || "Tacos", nombre: "", descripcion: "", precio: 0, ingredientes: [] });
   };
 
   const actualizarProducto = (id: number, cambios: Partial<Producto>) => {
@@ -888,6 +949,33 @@ export default function App() {
   const restaurarMenuGato = () => {
     if (!confirm("¿Restaurar el menú oficial de Gato Calavera?")) return;
     setProductos(productosGato);
+    setCategoriasMenu(categoriasProducto);
+    setCategoriaActiva("Tacos");
+  };
+
+  const crearFamilia = () => {
+    const nombre = nuevaFamilia.trim();
+    if (!nombre) {
+      alert("Digite el nombre de la familia.");
+      return;
+    }
+    if (categoriasMenu.some((categoria) => categoria.toLowerCase() === nombre.toLowerCase())) {
+      alert("Esa familia ya existe.");
+      return;
+    }
+    setCategoriasMenu((prev) => [...prev, nombre]);
+    setCategoriaActiva(nombre);
+    setNuevoProducto((prev) => ({ ...prev, categoria: nombre }));
+    setNuevaFamilia("");
+  };
+
+  const eliminarFamilia = (familia: CategoriaProducto) => {
+    if (productos.some((producto) => producto.categoria === familia)) {
+      alert("No se puede eliminar una familia que tiene productos. Primero mové o eliminá esos productos.");
+      return;
+    }
+    if (!confirm(`¿Eliminar familia ${familia}?`)) return;
+    setCategoriasMenu((prev) => prev.filter((categoria) => categoria !== familia));
   };
 
   const crearUsuario = () => {
@@ -1048,7 +1136,6 @@ export default function App() {
 
     const itemComanda = (item: ItemOrden) => {
       add(`${String(item.cantidad).padEnd(5, " ")} ${recortarTicket(item.nombre, 34)}`);
-      if (item.consumo === "LLEVAR") add("      PARA LLEVAR");
       if (item.sinIngredientes.length) add(`      SIN: ${recortarTicket(item.sinIngredientes.join(", "), 31)}`);
       if (item.extras.length) add(`      EXTRA: ${recortarTicket(item.extras.map((e) => e.nombre).join(", "), 29)}`);
       if (item.nota.trim()) add(`      NOTA: ${recortarTicket(item.nota.trim(), 30)}`);
@@ -1159,7 +1246,7 @@ export default function App() {
             item.extras.length ? `EXTRA: ${item.extras.map((extra) => extra.nombre).join(", ")}` : "",
             item.nota.trim(),
           ].filter(Boolean).join(" | "),
-          llevar: item.consumo === "LLEVAR",
+          llevar: false,
         })),
       };
     }
@@ -1452,7 +1539,7 @@ export default function App() {
               {puedeEditarOrdenActual && (
                 <div className="pos-products-panel">
                   <div className="category-card-tabs">
-                    {categoriasProducto.map((categoria) => {
+                    {categoriasMenu.map((categoria) => {
                       const cantidadCategoria = mesaSeleccionada.orden
                         .filter((item) => item.categoria === categoria && !item.pagado)
                         .reduce((acc, item) => acc + item.cantidad, 0);
@@ -1462,7 +1549,7 @@ export default function App() {
                           className={categoriaActiva === categoria ? "active" : ""}
                           onClick={() => setCategoriaActiva(categoria)}
                         >
-                          <span>{categoria === "Tacos" ? "🌮" : categoria === "Hamburguesas" ? "🍔" : categoria === "Papas" ? "🍟" : categoria === "Bebidas" ? "🥤" : "🌯"}</span>
+                          <span>{iconoCategoria(categoria)}</span>
                           <b>{categoria}</b>
                           {cantidadCategoria > 0 && <small>{cantidadCategoria}</small>}
                         </button>
@@ -1480,7 +1567,7 @@ export default function App() {
                           className={`product-pos-card ${cantidadEnOrden > 0 ? "selected" : ""}`}
                           onClick={() => agregarProductoOrden(producto)}
                         >
-                          <span className="product-pos-icon">{producto.categoria === "Tacos" ? "🌮" : producto.categoria === "Hamburguesas" ? "🍔" : producto.categoria === "Papas" ? "🍟" : producto.categoria === "Bebidas" ? "🥤" : "🌯"}</span>
+                          <span className="product-pos-icon">{iconoCategoria(producto.categoria)}</span>
                           <strong>{producto.nombre}</strong>
                           <small>{producto.descripcion}</small>
                           <b>{formatoCRC(producto.precio)}</b>
@@ -1502,6 +1589,7 @@ export default function App() {
                   <div className="order-items-grid">
                     {mesaSeleccionada.orden.map((item) => {
                       const tieneModificaciones = Boolean(item.nota.trim() || item.sinIngredientes.length || item.extras.length);
+                      const puedeMostrarControles = puedeMostrarControlesItem(item);
                       return (
                         <div key={item.uid} className="order-item tile-order-item">
                           <div className="tile-order-header">
@@ -1539,7 +1627,7 @@ export default function App() {
     </button>
   </div>
 
-  <textarea disabled={!puedeEditarItem(item)} value={item.nota} onChange={(e) => actualizarItem(item.uid, { nota: e.target.value })} placeholder="Nota para cocina" />{puedeEditarItem(item) ? (
+  <textarea disabled={!puedeMostrarControles} value={item.nota} onChange={(e) => actualizarItem(item.uid, { nota: e.target.value })} placeholder="Nota para cocina" />{puedeMostrarControles ? (
                                   <div className="mod-grid compact-mod-grid">
                                     {item.ingredientes.map((ingrediente) => (
                                       <label key={ingrediente}><input type="checkbox" checked={item.sinIngredientes.includes(ingrediente)} onChange={() => toggleIngrediente(item, ingrediente)} /> Sin {ingrediente}</label>
@@ -1569,7 +1657,7 @@ export default function App() {
                               Llevar
                             </label>
 
-                            {puedeEditarItem(item) && (
+                            {puedeMostrarControles && (
                               <div className="qty-control tile-qty-control">
                                 <button onClick={() => cambiarCantidad(item.uid, -1)}>-</button>
                                 <span>{item.cantidad}</span>
@@ -1577,7 +1665,7 @@ export default function App() {
                               </div>
                             )}
 
-                            {puedeEditarItem(item) && <button className="danger-mini tile-delete-button" onClick={() => eliminarItem(item.uid)}>Eliminar</button>}
+                            {puedeMostrarControles && <button className="danger-mini tile-delete-button" onClick={() => eliminarItem(item.uid)}>Eliminar</button>}
                           </div>
                         </div>
                       );
@@ -1616,6 +1704,7 @@ export default function App() {
                   )}
 
                   <div className="actions-row bottom-actions">
+                    {mesaSeleccionada.orden.length > 0 && puedeUsarCodigoAdmin && <button className="danger-mini" onClick={eliminarPedidoCompleto}>Eliminar pedido</button>}
                     {(esJefe || esAdmin || esMesero || esCaja) && <button className="primary" onClick={enviarComanda}>Imprimir comanda</button>}
                     {puedeCobrar && <button className="blue" onClick={cajaAbierta ? cobrar : abrirCaja} disabled={!itemsCobroActual.length} title={hayItemsCobroSinComanda ? "Primero imprimí la comanda" : undefined}>{textoBotonCobro}</button>}
                   </div>
@@ -1739,9 +1828,21 @@ export default function App() {
         {vista === "menu" && puedeEditarMenu && (
           <section className="page no-print">
             <div className="page-title"><div><h1>Menú Gato Calavera</h1><p>Estos productos son los que salen en POS, QR, comanda y factura.</p></div><button onClick={restaurarMenuGato}>Restaurar menú oficial</button></div>
+            <div className="panel family-admin-panel">
+              <h3>Familias</h3>
+              <div className="form-row compact-family-row">
+                <input value={nuevaFamilia} onChange={(e) => setNuevaFamilia(e.target.value)} placeholder="Nueva familia" />
+                <button className="primary" onClick={crearFamilia}>Crear familia</button>
+              </div>
+              <div className="family-chip-list">
+                {categoriasMenu.map((familia) => (
+                  <span key={familia} className="family-chip">{iconoCategoria(familia)} {familia}<button type="button" onClick={() => eliminarFamilia(familia)}>×</button></span>
+                ))}
+              </div>
+            </div>
             <div className="panel form-row">
               <input value={nuevoProducto.nombre} onChange={(e) => setNuevoProducto({ ...nuevoProducto, nombre: e.target.value })} placeholder="Nombre" />
-              <select value={nuevoProducto.categoria} onChange={(e) => setNuevoProducto({ ...nuevoProducto, categoria: e.target.value as CategoriaProducto })}>{categoriasProducto.map((c) => <option key={c}>{c}</option>)}</select>
+              <select value={nuevoProducto.categoria} onChange={(e) => setNuevoProducto({ ...nuevoProducto, categoria: e.target.value as CategoriaProducto })}>{categoriasMenu.map((c) => <option key={c}>{c}</option>)}</select>
               <input value={nuevoProducto.descripcion} onChange={(e) => setNuevoProducto({ ...nuevoProducto, descripcion: e.target.value })} placeholder="Descripción" />
               <input type="number" value={nuevoProducto.precio} onChange={(e) => setNuevoProducto({ ...nuevoProducto, precio: Number(e.target.value) })} placeholder="Precio" />
               <button className="primary" onClick={crearProducto}>Crear producto</button>
@@ -1750,7 +1851,7 @@ export default function App() {
               {productos.map((producto) => (
                 <div key={producto.id}>
                   <input value={producto.nombre} onChange={(e) => actualizarProducto(producto.id, { nombre: e.target.value })} />
-                  <select value={producto.categoria} onChange={(e) => actualizarProducto(producto.id, { categoria: e.target.value as CategoriaProducto })}>{categoriasProducto.map((c) => <option key={c}>{c}</option>)}</select>
+                  <select value={producto.categoria} onChange={(e) => actualizarProducto(producto.id, { categoria: e.target.value as CategoriaProducto })}>{categoriasMenu.map((c) => <option key={c}>{c}</option>)}</select>
                   <input value={producto.descripcion} onChange={(e) => actualizarProducto(producto.id, { descripcion: e.target.value })} />
                   <input type="number" value={producto.precio} onChange={(e) => actualizarProducto(producto.id, { precio: Number(e.target.value) })} />
                   <button className="danger-mini" onClick={() => eliminarProductoAdmin(producto.id)}>Eliminar</button>
@@ -2039,7 +2140,6 @@ function TicketPrint({ ticket }: { ticket: Ticket | null }) {
         {ticket.items.map((item) => (
           <div key={item.uid} className="ticket-item">
             <p><b>{item.cantidad}</b> {item.nombre}</p>
-            {item.consumo === "LLEVAR" && <small>PARA LLEVAR</small>}
             {item.sinIngredientes.length > 0 && <small>SIN: {item.sinIngredientes.join(", ")}</small>}
             {item.extras.length > 0 && <small>EXTRA: {item.extras.map((e) => e.nombre).join(", ")}</small>}
             {item.nota && <small>NOTA: {item.nota}</small>}

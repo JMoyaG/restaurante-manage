@@ -2962,3 +2962,41 @@ textarea {
 /* Fix V20: evita zonas invisibles encima de botones y mejora clicks en pantallas chicas */
 .pos-bottom-fixed, .actions-row, .pay-box, .category-card, .product-card, .order-tile { position: relative; z-index: 2; }
 button { touch-action: manipulation; }
+
+.family-admin-panel {
+  margin-bottom: 14px;
+}
+.family-admin-panel h3 {
+  margin: 0 0 8px;
+  color: var(--green);
+}
+.compact-family-row {
+  gap: 8px;
+  align-items: center;
+}
+.family-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.family-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: #fff7e7;
+  border: 1px solid #ead6b7;
+  font-weight: 700;
+}
+.family-chip button {
+  border: none;
+  background: #ffd8d8;
+  color: #a11d1d;
+  border-radius: 999px;
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  font-weight: 900;
+}
