@@ -226,9 +226,12 @@ const calcularTotales = (items: ItemOrden[]) => {
   return { subtotal, servicio, total: subtotal, baseServicio };
 };
 
+const crearUidItem = (productoId: number) =>
+  `${productoId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
 const crearItem = (producto: Producto, consumo: TipoConsumo): ItemOrden => ({
   ...producto,
-  uid: `${producto.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  uid: crearUidItem(producto.id),
   cantidad: 1,
   nota: "",
   sinIngredientes: [],
@@ -237,6 +240,12 @@ const crearItem = (producto: Producto, consumo: TipoConsumo): ItemOrden => ({
   enviadoComanda: false,
   pagado: false,
 });
+
+const esCambioDeDetalleCocina = (cambios: Partial<ItemOrden>) =>
+  Object.prototype.hasOwnProperty.call(cambios, "nota") ||
+  Object.prototype.hasOwnProperty.call(cambios, "sinIngredientes") ||
+  Object.prototype.hasOwnProperty.call(cambios, "extras") ||
+  Object.prototype.hasOwnProperty.call(cambios, "consumo");
 
 const inferirTipoOrden = (orden: ItemOrden[]): Mesa["tipoOrden"] => {
   if (!orden.length) return "LOCAL";
@@ -598,7 +607,33 @@ export default function App() {
     const itemActual = mesaSeleccionada.orden.find((item) => item.uid === uid);
     if (!itemActual || itemActual.pagado) return;
     if (itemActual.enviadoComanda && !solicitarCodigoAdmin("modificar productos impresos")) return;
-    actualizarMesa({ ...mesaSeleccionada, orden: mesaSeleccionada.orden.map((item) => (item.uid === uid ? { ...item, ...cambios } : item)) });
+
+    const cambioDeDetalle = esCambioDeDetalleCocina(cambios);
+    const debeSepararUnidad = cambioDeDetalle && itemActual.cantidad > 1;
+
+    const orden = mesaSeleccionada.orden.flatMap((item) => {
+      if (item.uid !== uid) return [item];
+
+      if (debeSepararUnidad) {
+        const itemOriginal: ItemOrden = { ...item, cantidad: item.cantidad - 1 };
+        const itemSeparado: ItemOrden = {
+          ...item,
+          ...cambios,
+          uid: crearUidItem(item.id),
+          cantidad: 1,
+          enviadoComanda: false,
+        };
+        return [itemOriginal, itemSeparado];
+      }
+
+      return [{
+        ...item,
+        ...cambios,
+        enviadoComanda: cambioDeDetalle ? false : item.enviadoComanda,
+      }];
+    });
+
+    actualizarMesa({ ...mesaSeleccionada, estado: orden.length ? "Ocupada" : "Libre", orden });
   };
 
   const toggleIngrediente = (item: ItemOrden, ingrediente: string) => {
@@ -622,9 +657,29 @@ export default function App() {
       return;
     }
     if (itemActual.enviadoComanda && !solicitarCodigoAdmin("cambiar local/llevar de productos impresos")) return;
+
+    const debeSepararUnidad = itemActual.cantidad > 1;
+    const orden = mesaSeleccionada.orden.flatMap((item) => {
+      if (item.uid !== uid) return [item];
+
+      if (debeSepararUnidad) {
+        const itemOriginal: ItemOrden = { ...item, cantidad: item.cantidad - 1 };
+        const itemSeparado: ItemOrden = {
+          ...item,
+          uid: crearUidItem(item.id),
+          cantidad: 1,
+          consumo,
+          enviadoComanda: false,
+        };
+        return [itemOriginal, itemSeparado];
+      }
+
+      return [{ ...item, consumo, enviadoComanda: false }];
+    });
+
     actualizarMesa({
       ...mesaSeleccionada,
-      orden: mesaSeleccionada.orden.map((item) => (item.uid === uid ? { ...item, consumo } : item)),
+      orden,
     });
   };
 
