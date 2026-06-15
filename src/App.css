@@ -3000,3 +3000,19 @@ button { touch-action: manipulation; }
   cursor: pointer;
   font-weight: 900;
 }
+
+
+.venta-item-line {
+  display: grid;
+  gap: 2px;
+  padding: 4px 0;
+}
+
+.observacion-line {
+  display: block;
+  color: #7c2d12;
+  font-weight: 700;
+  background: #fff7ed;
+  border-radius: 8px;
+  padding: 3px 8px;
+}

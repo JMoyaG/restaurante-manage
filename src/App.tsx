@@ -97,7 +97,7 @@ type MovimientoCaja = {
   cuenta?: number;
   mesa?: string;
   usuario: string;
-  items?: { nombre: string; cantidad: number; total: number; consumo: TipoConsumo }[];
+  items?: { nombre: string; cantidad: number; total: number; consumo: TipoConsumo; nota?: string; sinIngredientes?: string[]; extras?: Extra[] }[];
 };
 
 type CierreCaja = {
@@ -218,6 +218,17 @@ const formatoCRC = (monto: number) =>
 
 const precioLinea = (item: ItemOrden) =>
   (item.precio + item.extras.reduce((acc, extra) => acc + extra.precio, 0)) * item.cantidad;
+
+
+const observacionesItem = (item: Pick<ItemOrden, "nota" | "sinIngredientes" | "extras">) =>
+  [
+    item.sinIngredientes?.length ? `SIN: ${item.sinIngredientes.join(", ")}` : "",
+    item.extras?.length ? `EXTRA: ${item.extras.map((extra) => `${extra.nombre}${extra.precio ? ` ${formatoCRC(extra.precio)}` : ""}`).join(", ")}` : "",
+    item.nota?.trim() ? `OBS: ${item.nota.trim()}` : "",
+  ].filter(Boolean);
+
+const observacionesTextoItem = (item: Pick<ItemOrden, "nota" | "sinIngredientes" | "extras">) =>
+  observacionesItem(item).join(" | ");
 
 const calcularTotales = (items: ItemOrden[]) => {
   const subtotal = items.reduce((acc, item) => acc + precioLinea(item), 0);
@@ -615,15 +626,21 @@ export default function App() {
       if (item.uid !== uid) return [item];
 
       if (debeSepararUnidad) {
-        const itemOriginal: ItemOrden = { ...item, cantidad: item.cantidad - 1 };
+        // Al editar observaciones/modificadores de una línea agrupada,
+        // mantenemos el mismo UID en la unidad editada para que el textarea
+        // no pierda foco y la observación no se borre mientras se escribe.
         const itemSeparado: ItemOrden = {
           ...item,
           ...cambios,
-          uid: crearUidItem(item.id),
           cantidad: 1,
           enviadoComanda: false,
         };
-        return [itemOriginal, itemSeparado];
+        const itemOriginal: ItemOrden = {
+          ...item,
+          uid: crearUidItem(item.id),
+          cantidad: item.cantidad - 1,
+        };
+        return [itemSeparado, itemOriginal];
       }
 
       return [{
@@ -663,15 +680,18 @@ export default function App() {
       if (item.uid !== uid) return [item];
 
       if (debeSepararUnidad) {
-        const itemOriginal: ItemOrden = { ...item, cantidad: item.cantidad - 1 };
         const itemSeparado: ItemOrden = {
           ...item,
-          uid: crearUidItem(item.id),
           cantidad: 1,
           consumo,
           enviadoComanda: false,
         };
-        return [itemOriginal, itemSeparado];
+        const itemOriginal: ItemOrden = {
+          ...item,
+          uid: crearUidItem(item.id),
+          cantidad: item.cantidad - 1,
+        };
+        return [itemSeparado, itemOriginal];
       }
 
       return [{ ...item, consumo, enviadoComanda: false }];
@@ -806,7 +826,7 @@ export default function App() {
       cuenta: venta.cuenta,
       mesa: venta.mesa,
       usuario: venta.usuario,
-      items: venta.items.map((item) => ({ nombre: item.nombre, cantidad: item.cantidad, total: precioLinea(item), consumo: item.consumo })),
+      items: venta.items.map((item) => ({ nombre: item.nombre, cantidad: item.cantidad, total: precioLinea(item), consumo: item.consumo, nota: item.nota, sinIngredientes: item.sinIngredientes, extras: item.extras })),
     };
     const ids = new Set(itemsCobroActual.map((item) => item.uid));
     const ordenActualizada = mesaSeleccionada.orden.map((item) => (ids.has(item.uid) ? { ...item, pagado: true } : item));
@@ -1186,14 +1206,14 @@ export default function App() {
       if (item.cantidad > 1) add(`  ${item.cantidad} x ${formatoNumeroTicket(item.precio + item.extras.reduce((acc, extra) => acc + extra.precio, 0))}`);
       if (item.sinIngredientes.length) add(`  SIN: ${recortarTicket(item.sinIngredientes.join(", "), 34)}`);
       if (item.extras.length) add(`  EXTRA: ${recortarTicket(item.extras.map((e) => e.nombre).join(", "), 32)}`);
-      if (item.nota.trim()) add(`  NOTA: ${recortarTicket(item.nota.trim(), 33)}`);
+      if (item.nota.trim()) add(`  OBS: ${recortarTicket(item.nota.trim(), 33)}`);
     };
 
     const itemComanda = (item: ItemOrden) => {
       add(`${String(item.cantidad).padEnd(5, " ")} ${recortarTicket(item.nombre, 34)}`);
       if (item.sinIngredientes.length) add(`      SIN: ${recortarTicket(item.sinIngredientes.join(", "), 31)}`);
       if (item.extras.length) add(`      EXTRA: ${recortarTicket(item.extras.map((e) => e.nombre).join(", "), 29)}`);
-      if (item.nota.trim()) add(`      NOTA: ${recortarTicket(item.nota.trim(), 30)}`);
+      if (item.nota.trim()) add(`      OBS: ${recortarTicket(item.nota.trim(), 30)}`);
     };
 
     if (ticket.tipo === "comanda") {
@@ -1659,7 +1679,7 @@ export default function App() {
                             <div className="tile-order-summary">
                               {item.sinIngredientes.length > 0 && <span>SIN: {item.sinIngredientes.join(", ")}</span>}
                               {item.extras.length > 0 && <span>EXTRAS: {item.extras.map((extra) => `${extra.nombre} ${formatoCRC(extra.precio)}`).join(", ")}</span>}
-                              {item.nota.trim() && <span>NOTA: {item.nota}</span>}
+                              {item.nota.trim() && <span>OBS: {item.nota}</span>}
                             </div>
                           )}
 
@@ -1682,7 +1702,7 @@ export default function App() {
     </button>
   </div>
 
-  <textarea disabled={!puedeMostrarControles} value={item.nota} onChange={(e) => actualizarItem(item.uid, { nota: e.target.value })} placeholder="Nota para cocina" />{puedeMostrarControles ? (
+  <textarea disabled={!puedeMostrarControles} value={item.nota} onChange={(e) => actualizarItem(item.uid, { nota: e.target.value })} placeholder="Observación para cocina / factura" />{puedeMostrarControles ? (
                                   <div className="mod-grid compact-mod-grid">
                                     {item.ingredientes.map((ingrediente) => (
                                       <label key={ingrediente}><input type="checkbox" checked={item.sinIngredientes.includes(ingrediente)} onChange={() => toggleIngrediente(item, ingrediente)} /> Sin {ingrediente}</label>
@@ -1695,7 +1715,7 @@ export default function App() {
                                   <div className="read-only-mods">
                                     {item.sinIngredientes.length > 0 && <p><b>SIN:</b> {item.sinIngredientes.join(", ")}</p>}
                                     {item.extras.length > 0 && <p><b>EXTRAS:</b> {item.extras.map((extra) => `${extra.nombre} ${formatoCRC(extra.precio)}`).join(", ")}</p>}
-                                    {item.nota.trim() && <p><b>NOTA:</b> {item.nota}</p>}
+                                    {item.nota.trim() && <p><b>OBS:</b> {item.nota}</p>}
                                     {!tieneModificaciones && <p>Sin modificaciones.</p>}
                                   </div>
                                 )}
@@ -2149,7 +2169,19 @@ function MovimientoCajaRow({ movimiento }: { movimiento: MovimientoCaja }) {
         <b>{movimiento.tipo}</b>
         <small>{movimiento.fecha} · {movimiento.usuario}{movimiento.metodoPago ? ` · ${movimiento.metodoPago}` : ""}</small>
         <p>{movimiento.descripcion}</p>
-        {movimiento.items?.map((item, idx) => <small key={`${item.nombre}-${idx}`}>{item.cantidad}x {item.nombre} · {item.consumo} · {formatoCRC(item.total)}</small>)}
+        {movimiento.items?.map((item, idx) => {
+          const observaciones = observacionesItem({
+            nota: item.nota || "",
+            sinIngredientes: item.sinIngredientes || [],
+            extras: item.extras || [],
+          });
+          return (
+            <small key={`${item.nombre}-${idx}`}>
+              {item.cantidad}x {item.nombre} · {item.consumo} · {formatoCRC(item.total)}
+              {observaciones.length > 0 ? ` · ${observaciones.join(" | ")}` : ""}
+            </small>
+          );
+        })}
       </div>
       <strong>{formatoCRC(movimiento.monto)}</strong>
     </div>
@@ -2166,9 +2198,15 @@ function VentaDetalleRow({ venta }: { venta: Venta }) {
         </div>
         <strong>{formatoCRC(venta.total)}</strong>
       </div>
-      {venta.items.map((item) => (
-        <p key={item.uid}>{item.cantidad}x {item.nombre} · {item.consumo} · {formatoCRC(precioLinea(item))}</p>
-      ))}
+      {venta.items.map((item) => {
+        const observaciones = observacionesItem(item);
+        return (
+          <div key={item.uid} className="venta-item-line">
+            <p>{item.cantidad}x {item.nombre} · {item.consumo} · {formatoCRC(precioLinea(item))}</p>
+            {observaciones.length > 0 && <small className="observacion-line">{observaciones.join(" | ")}</small>}
+          </div>
+        );
+      })}
       <small>Subtotal {formatoCRC(venta.subtotal)} · Total {formatoCRC(venta.total)}</small>
     </div>
   );
@@ -2197,7 +2235,7 @@ function TicketPrint({ ticket }: { ticket: Ticket | null }) {
             <p><b>{item.cantidad}</b> {item.nombre}</p>
             {item.sinIngredientes.length > 0 && <small>SIN: {item.sinIngredientes.join(", ")}</small>}
             {item.extras.length > 0 && <small>EXTRA: {item.extras.map((e) => e.nombre).join(", ")}</small>}
-            {item.nota && <small>NOTA: {item.nota}</small>}
+            {item.nota && <small>OBS: {item.nota}</small>}
           </div>
         ))}
         <hr />
@@ -2287,10 +2325,9 @@ function TicketPrint({ ticket }: { ticket: Ticket | null }) {
       {venta.items.map((item) => (
         <div key={item.uid} className="fact-line">
           <span>{item.cantidad > 1 ? `${item.cantidad}x ` : ""}{item.nombre}</span><b>{formatoCRC(precioLinea(item))}</b>
-          {item.consumo === "LLEVAR" && <small>Para llevar</small>}
           {item.sinIngredientes.length > 0 && <small>SIN: {item.sinIngredientes.join(", ")}</small>}
           {item.extras.length > 0 && <small>EXTRAS: {item.extras.map((e) => `${e.nombre} ${formatoCRC(e.precio)}`).join(", ")}</small>}
-          {item.nota && <small>Nota: {item.nota}</small>}
+          {item.nota && <small>Obs: {item.nota}</small>}
         </div>
       ))}
       <hr />
